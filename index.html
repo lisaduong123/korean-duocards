@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>한국어 마스터 - Học Tiếng Hàn Cùng Flashcard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="app-shell">
+
+    <!-- HEADER -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-logo">한</div>
+        <div class="brand-text">
+          <h1>한국어 마스터</h1>
+          <span>Học từ vựng tiếng Hàn mỗi ngày</span>
+        </div>
+      </div>
+      <div class="stats-pill" id="statsPill">
+        <span class="stat-item"><strong id="statDue">0</strong> cần ôn</span>
+        <span class="stat-divider">•</span>
+        <span class="stat-item"><strong id="statLearned">0</strong> đã thuộc</span>
+      </div>
+    </header>
+
+    <!-- TAB NAV -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="flashcard">
+        <span class="tab-icon">🎴</span>
+        <span>Flashcard</span>
+      </button>
+      <button class="tab-btn" data-tab="cloze">
+        <span class="tab-icon">✏️</span>
+        <span>Điền từ</span>
+      </button>
+      <button class="tab-btn" data-tab="lookup">
+        <span class="tab-icon">🤖</span>
+        <span>Tra cứu & AI</span>
+      </button>
+      <div class="tab-indicator" id="tabIndicator"></div>
+    </nav>
+
+    <!-- MAIN CONTENT -->
+    <main class="app-main">
+
+      <!-- ===================== TAB 1: FLASHCARD ===================== -->
+      <section class="tab-panel active" id="panel-flashcard">
+        <div class="panel-inner">
+
+          <div class="progress-row">
+            <div class="progress-track">
+              <div class="progress-fill" id="flashProgressFill"></div>
+            </div>
+            <span class="progress-label" id="flashProgressLabel">0 / 0</span>
+          </div>
+
+          <div class="flashcard-zone" id="flashcardZone">
+            <div class="flashcard" id="flashcard">
+              <div class="flashcard-face flashcard-front">
+                <span class="badge-level" id="cardLevelBadge">Mới</span>
+                <p class="card-kr" id="cardKr">안녕하세요</p>
+                <p class="card-hint">Nhấn vào thẻ để lật</p>
+              </div>
+              <div class="flashcard-face flashcard-back">
+                <p class="card-romaja" id="cardRomaja">annyeonghaseyo</p>
+                <p class="card-vi" id="cardVi">Xin chào</p>
+                <p class="card-example" id="cardExample">"안녕하세요, 만나서 반갑습니다."</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="flash-actions" id="flashActions">
+            <button class="btn btn-forget" id="btnForget">
+              <span class="btn-icon">✕</span> Chưa nhớ
+            </button>
+            <button class="btn btn-remember" id="btnRemember">
+              <span class="btn-icon">✓</span> Đã nhớ
+            </button>
+          </div>
+
+          <div class="empty-state" id="flashEmptyState" style="display:none;">
+            <div class="empty-emoji">🎉</div>
+            <h3>Tuyệt vời! Bạn đã ôn hết thẻ hôm nay</h3>
+            <p>Quay lại sau để tiếp tục ôn tập theo lịch lặp lại ngắt quãng.</p>
+            <button class="btn btn-primary" id="btnReviewAllAgain">Ôn lại toàn bộ từ vựng</button>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ===================== TAB 2: CLOZE TEST ===================== -->
+      <section class="tab-panel" id="panel-cloze">
+        <div class="panel-inner">
+
+          <div class="progress-row">
+            <div class="progress-track">
+              <div class="progress-fill" id="clozeProgressFill"></div>
+            </div>
+            <span class="progress-label" id="clozeProgressLabel">0 / 0</span>
+          </div>
+
+          <div class="cloze-card">
+            <span class="badge-tag">Điền từ khuyết thiếu</span>
+            <p class="cloze-sentence" id="clozeSentence">
+              <!-- filled by JS -->
+            </p>
+            <p class="cloze-translation" id="clozeTranslation"></p>
+
+            <div class="cloze-options" id="clozeOptions">
+              <!-- option buttons injected here -->
+            </div>
+
+            <div class="cloze-feedback" id="clozeFeedback"></div>
+
+            <button class="btn btn-primary btn-block" id="btnClozeNext" style="display:none;">
+              Câu tiếp theo →
+            </button>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ===================== TAB 3: LOOKUP & AI GRADING ===================== -->
+      <section class="tab-panel" id="panel-lookup">
+        <div class="panel-inner panel-lookup-grid">
+
+          <!-- Vocabulary list -->
+          <div class="card-block">
+            <h2 class="block-title">📚 Danh sách từ vựng</h2>
+            <input type="text" id="searchVocab" class="input-field" placeholder="Tìm kiếm từ vựng (Hàn / Việt)...">
+            <div class="vocab-list" id="vocabList">
+              <!-- injected by JS -->
+            </div>
+          </div>
+
+          <!-- AI Grading -->
+          <div class="card-block">
+            <h2 class="block-title">🤖 AI Chấm điểm bản dịch</h2>
+
+            <label class="field-label">Gemini API Key</label>
+            <div class="input-with-btn">
+              <input type="password" id="apiKeyInput" class="input-field" placeholder="Dán API Key Gemini của bạn...">
+              <button class="btn btn-secondary btn-sm" id="btnSaveKey">Lưu</button>
+            </div>
+            <p class="hint-text">API Key được lưu cục bộ (localStorage) trên trình duyệt của bạn, không gửi đi đâu khác.</p>
+
+            <label class="field-label mt">Câu tiếng Hàn cần dịch</label>
+            <div class="sample-sentence-box" id="sampleSentenceBox">아침에 일어나서 커피를 마셨어요.</div>
+            <button class="btn btn-tertiary btn-sm" id="btnRandomSentence">🔀 Đổi câu ví dụ</button>
+
+            <label class="field-label mt">Bản dịch của bạn (Tiếng Việt)</label>
+            <textarea id="userTranslation" class="input-field textarea-field" rows="3" placeholder="Nhập bản dịch tiếng Việt của bạn..."></textarea>
+
+            <button class="btn btn-primary btn-block mt" id="btnGrade">
+              <span id="gradeBtnText">✨ Chấm điểm bằng AI</span>
+            </button>
+
+            <div class="ai-result" id="aiResult" style="display:none;">
+              <div class="ai-result-header">
+                <span id="aiScoreBadge" class="score-badge">-</span>
+                <span id="aiResultTitle">Kết quả chấm điểm</span>
+              </div>
+              <p id="aiResultText"></p>
+            </div>
+
+            <details class="gas-config">
+              <summary>⚙️ Cấu hình đồng bộ Google Apps Script (tuỳ chọn)</summary>
+              <label class="field-label mt">GAS Web App URL</label>
+              <div class="input-with-btn">
+                <input type="text" id="gasUrlInput" class="input-field" placeholder="https://script.google.com/macros/s/.../exec">
+                <button class="btn btn-secondary btn-sm" id="btnSaveGas">Lưu</button>
+              </div>
+              <p class="hint-text">Nếu thiết lập, ứng dụng sẽ tự động gửi tiến độ học (đã nhớ/chưa nhớ) lên Google Sheet của bạn qua Apps Script.</p>
+            </details>
+
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+
+    <footer class="app-footer">
+      <p>Được xây dựng với ❤️ để chinh phục tiếng Hàn — dữ liệu học tập lưu trên trình duyệt của bạn.</p>
+    </footer>
+
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
