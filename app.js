@@ -530,7 +530,7 @@ async function handleGradeTranslation() {
  * @returns {Promise<{score: number|null, text: string}>}
  */
 async function callGeminiGrading(apiKey, koreanSentence, userTranslation) {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   const prompt = `Bạn là giáo viên tiếng Hàn. Câu tiếng Hàn gốc là: "${koreanSentence}".
 Học viên đã dịch câu này sang tiếng Việt như sau: "${userTranslation}".
