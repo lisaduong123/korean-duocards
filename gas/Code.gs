@@ -10,6 +10,10 @@
 
 const SHEET_NHAP_DATA = "Nhập Data";
 const SHEET_RAW_DATA   = "Raw Data";
+const SHEET_PROGRESS    = "Tiến Độ Học";
+
+// Phải trùng khớp với data-client_id trong index.html (Google Cloud Console > OAuth Client ID)
+const GOOGLE_CLIENT_ID = "238871865056-9fc3keghvjlfipmbmdjtqiaj7b72lbpk.apps.googleusercontent.com";
 
 /** Làm sạch chuỗi: chuẩn hoá NFC (quan trọng với tiếng Việt/Hàn), gộp khoảng trắng, trim */
 function CLEAN(txt) {
@@ -381,12 +385,71 @@ function doPost(e) {
       return jsonResponse({ success: false, error: "Dữ liệu gửi lên không đúng định dạng JSON." });
     }
 
+    if (payload.mode === "progress") {
+      return handleProgressSync(payload);
+    }
+
     const result = processText(payload);
     return jsonResponse(result);
 
   } catch (err) {
     return jsonResponse({ success: false, error: "Lỗi doPost: " + err.message });
   }
+}
+
+/**
+ * Xác thực idToken do Google Identity Services trả về ở phía trình duyệt,
+ * bằng cách gọi endpoint tokeninfo chính thức của Google để kiểm tra chữ ký/hạn dùng
+ * và đảm bảo token được cấp cho đúng OAuth Client ID của app này (trường "aud").
+ * @returns {{email: string, name: string}|null} null nếu token không hợp lệ
+ */
+function verifyGoogleIdToken(idToken) {
+  if (!idToken) return null;
+  try {
+    const res = UrlFetchApp.fetch(
+      "https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(idToken),
+      { muteHttpExceptions: true }
+    );
+    if (res.getResponseCode() !== 200) return null;
+
+    const data = JSON.parse(res.getContentText());
+    if (data.aud !== GOOGLE_CLIENT_ID) return null;
+    if (!data.email || (data.email_verified !== "true" && data.email_verified !== true)) return null;
+
+    return { email: data.email, name: data.name || data.email };
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * Ghi 1 dòng tiến độ học (đã nhớ/chưa nhớ/điểm AI) vào sheet "Tiến Độ Học" dùng chung
+ * cho mọi người dùng đã đăng nhập Google. Mỗi dòng được gắn email/tên đã xác thực
+ * để phân biệt tiến độ của từng người trong cùng 1 sheet.
+ */
+function handleProgressSync(payload) {
+  const user = verifyGoogleIdToken(payload.idToken);
+  if (!user) {
+    return jsonResponse({ success: false, error: "Xác thực Google không hợp lệ hoặc đã hết hạn." });
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(SHEET_PROGRESS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_PROGRESS);
+    sheet.appendRow(["Thời gian", "Email", "Tên", "Vocab ID", "Hành động", "Giá trị"]);
+  }
+
+  sheet.appendRow([
+    new Date(),
+    user.email,
+    user.name,
+    CLEAN(payload.vocabId),
+    CLEAN(payload.action),
+    payload.value
+  ]);
+
+  return jsonResponse({ success: true });
 }
 
 /**

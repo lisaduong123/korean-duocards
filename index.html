@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>한국어 마스터 - Học Tiếng Hàn Cùng Flashcard</title>
 <link rel="stylesheet" href="style.css">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -166,15 +167,24 @@
               <p id="aiResultText"></p>
             </div>
 
-            <details class="gas-config">
-              <summary>⚙️ Cấu hình đồng bộ Google Apps Script (tuỳ chọn)</summary>
-              <label class="field-label mt">GAS Web App URL</label>
-              <div class="input-with-btn">
-                <input type="text" id="gasUrlInput" class="input-field" placeholder="https://script.google.com/macros/s/.../exec">
-                <button class="btn btn-secondary btn-sm" id="btnSaveGas">Lưu</button>
+            <div class="gsync-block">
+              <h3 class="field-label mt">☁️ Đồng bộ tiến độ học</h3>
+              <p class="hint-text" id="gsyncStatusText">Đăng nhập Google để tự động lưu tiến độ học (đã nhớ/chưa nhớ) lên hệ thống chung.</p>
+              <div id="g_id_onload"
+                   data-client_id="238871865056-9fc3keghvjlfipmbmdjtqiaj7b72lbpk.apps.googleusercontent.com"
+                   data-callback="handleGoogleCredentialResponse"
+                   data-auto_prompt="false">
               </div>
-              <p class="hint-text">Nếu thiết lập, ứng dụng sẽ tự động gửi tiến độ học (đã nhớ/chưa nhớ) lên Google Sheet của bạn qua Apps Script.</p>
-            </details>
+              <div class="g_id_signin" id="googleSignInButton"
+                   data-type="standard"
+                   data-size="large"
+                   data-theme="outline"
+                   data-text="signin_with"
+                   data-shape="rectangular"
+                   data-logo_alignment="left">
+              </div>
+              <button class="btn btn-tertiary btn-sm" id="btnGoogleSignOut" style="display:none;">Đăng xuất</button>
+            </div>
 
           </div>
 

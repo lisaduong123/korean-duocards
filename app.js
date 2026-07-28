@@ -452,15 +452,9 @@ function initLookupTab() {
     showToast("✓ Đã lưu API Key");
   });
 
-  // GAS URL
-  const gasUrlInput = document.getElementById("gasUrlInput");
-  gasUrlInput.value = localStorage.getItem("koreanApp_gasUrl") || "";
-
-  document.getElementById("btnSaveGas").addEventListener("click", () => {
-    const url = gasUrlInput.value.trim();
-    localStorage.setItem("koreanApp_gasUrl", url);
-    showToast(url ? "✓ Đã lưu URL Google Apps Script" : "Đã xoá URL Google Apps Script");
-  });
+  // Đồng bộ Google (Sign-In)
+  document.getElementById("btnGoogleSignOut").addEventListener("click", signOutGoogle);
+  updateGoogleSyncUI();
 
   // Câu ví dụ ngẫu nhiên
   pickRandomSampleSentence();
@@ -574,13 +568,62 @@ Nhận xét: <nhận xét ngắn gọn 2-3 câu bằng tiếng Việt, chỉ ra 
 }
 
 /* --------------------------------------------------------------------------
-   10. ĐỒNG BỘ TIẾN ĐỘ VỚI GOOGLE APPS SCRIPT (GAS) — NẾU NGƯỜI DÙNG CÓ CẤU HÌNH
+   10. ĐĂNG NHẬP GOOGLE + ĐỒNG BỘ TIẾN ĐỘ VỚI GOOGLE APPS SCRIPT (GAS)
+   URL của Apps Script Web App dùng chung cho mọi người dùng (gắn cứng sẵn).
+   Chỉ khi người dùng đã đăng nhập Google thì tiến độ mới được gửi lên,
+   kèm theo idToken để phía Apps Script xác thực danh tính trước khi ghi Sheet.
    -------------------------------------------------------------------------- */
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwzFDh1tW2SziRMPZVO6a2VXwx0qQEvPETuSi3GUJI6w9eiIAWOyScDKtDebYrcUAE0/exec";
+
+let currentGoogleIdToken = null;
+let currentGoogleUser = null; // { email, name }
+
+function decodeJwtPayload(jwt) {
+  const base64Url = jwt.split(".")[1];
+  const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+  return JSON.parse(decodeURIComponent(escape(atob(base64))));
+}
+
+function handleGoogleCredentialResponse(response) {
+  currentGoogleIdToken = response.credential;
+  const payload = decodeJwtPayload(response.credential);
+  currentGoogleUser = { email: payload.email, name: payload.name || payload.email };
+  showToast(`✓ Đã đăng nhập Google: ${currentGoogleUser.name}`);
+  updateGoogleSyncUI();
+}
+window.handleGoogleCredentialResponse = handleGoogleCredentialResponse;
+
+function signOutGoogle() {
+  currentGoogleIdToken = null;
+  currentGoogleUser = null;
+  if (window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
+  showToast("Đã đăng xuất Google");
+  updateGoogleSyncUI();
+}
+
+function updateGoogleSyncUI() {
+  const statusText = document.getElementById("gsyncStatusText");
+  const signInBtn = document.getElementById("googleSignInButton");
+  const signOutBtn = document.getElementById("btnGoogleSignOut");
+
+  if (currentGoogleUser) {
+    statusText.textContent = `✓ Đã đăng nhập: ${currentGoogleUser.name} (${currentGoogleUser.email}) — tiến độ học đang tự động đồng bộ.`;
+    signInBtn.style.display = "none";
+    signOutBtn.style.display = "inline-flex";
+  } else {
+    statusText.textContent = "Đăng nhập Google để tự động lưu tiến độ học (đã nhớ/chưa nhớ) lên hệ thống chung.";
+    signInBtn.style.display = "block";
+    signOutBtn.style.display = "none";
+  }
+}
+
 async function sendProgressToGAS(vocabId, action, value) {
-  const gasUrl = localStorage.getItem("koreanApp_gasUrl");
-  if (!gasUrl) return; // Không có URL cấu hình -> bỏ qua, không báo lỗi
+  if (GAS_URL.startsWith("REPLACE_WITH_")) return; // Chưa cấu hình URL GAS -> bỏ qua
+  if (!currentGoogleIdToken) return; // Chưa đăng nhập Google -> chỉ lưu local, không đồng bộ
 
   const payload = {
+    mode: "progress",
+    idToken: currentGoogleIdToken,
     vocabId,
     action,     // "remember" | "forget" | "ai_grading"
     value,      // level SRS hoặc điểm AI
@@ -588,7 +631,7 @@ async function sendProgressToGAS(vocabId, action, value) {
   };
 
   try {
-    await fetch(gasUrl, {
+    await fetch(GAS_URL, {
       method: "POST",
       mode: "no-cors", // Apps Script Web App thường yêu cầu no-cors từ trình duyệt
       headers: { "Content-Type": "text/plain;charset=utf-8" },
