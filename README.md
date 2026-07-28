@@ -123,3 +123,11 @@ Mở trực tiếp `index.html` bằng trình duyệt, hoặc dùng 1 static ser
 
 - Repo này là **public** — không bao giờ hardcode Gemini API Key hoặc bất kỳ secret nào tốn phí vào code, vì ai cũng đọc được trên GitHub.
 - GAS Web App URL được hardcode có chủ đích (không phải secret tốn phí), nhưng vì endpoint này công khai, mọi request ghi dữ liệu **bắt buộc phải có `idToken` hợp lệ** được `Code.gs` xác thực qua Google trước khi ghi Sheet — tránh bị spam dữ liệu rác vô danh.
+
+## 8. Model Gemini đang dùng & lỗi 404 model not found
+
+`app.js` gọi Gemini API bằng model **`gemini-flash-latest`** (trong hàm `callGeminiGrading`) thay vì ghi cứng 1 phiên bản cụ thể (vd `gemini-1.5-flash`, `gemini-2.5-flash`). Lý do: Google thường xuyên ngừng hỗ trợ (deprecate) các phiên bản model cụ thể, khiến API trả lỗi `404 NOT_FOUND`. Dùng alias `-latest` giúp code luôn tự trỏ vào bản flash mới nhất Google khuyến nghị, không cần sửa code mỗi lần Google đổi model mặc định.
+
+Nếu sau này vẫn gặp lỗi `404` với thông báo kiểu "model ... is not found" hoặc "no longer available":
+1. Kiểm tra chắc chắn đang test qua link GitHub Pages thật (không phải mở file `index.html` trực tiếp) và đã hard-refresh (Ctrl+Shift+R) để loại trừ cache trình duyệt.
+2. Nếu vẫn lỗi, có thể alias `-latest` cũng đã bị đổi tên/ngừng hỗ trợ — vào `https://aistudio.google.com`, chọn "Get code" ở 1 model bất kỳ để xem tên model hiện tại Google đang đề xuất cho tài khoản của bạn, rồi cập nhật lại trong `app.js`.
