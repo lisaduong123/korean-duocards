@@ -404,20 +404,36 @@ function doPost(e) {
  * @returns {{email: string, name: string}|null} null nếu token không hợp lệ
  */
 function verifyGoogleIdToken(idToken) {
-  if (!idToken) return null;
+  if (!idToken) {
+    console.log("[verifyGoogleIdToken] Không có idToken nào được gửi lên.");
+    return null;
+  }
   try {
     const res = UrlFetchApp.fetch(
       "https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(idToken),
       { muteHttpExceptions: true }
     );
+    console.log("[verifyGoogleIdToken] tokeninfo response code: " + res.getResponseCode());
+    console.log("[verifyGoogleIdToken] tokeninfo response body: " + res.getContentText());
+
     if (res.getResponseCode() !== 200) return null;
 
     const data = JSON.parse(res.getContentText());
-    if (data.aud !== GOOGLE_CLIENT_ID) return null;
-    if (!data.email || (data.email_verified !== "true" && data.email_verified !== true)) return null;
+    console.log("[verifyGoogleIdToken] aud nhận được: " + data.aud + " | GOOGLE_CLIENT_ID hiện tại: " + GOOGLE_CLIENT_ID);
 
+    if (data.aud !== GOOGLE_CLIENT_ID) {
+      console.log("[verifyGoogleIdToken] THẤT BẠI: aud không khớp GOOGLE_CLIENT_ID.");
+      return null;
+    }
+    if (!data.email || (data.email_verified !== "true" && data.email_verified !== true)) {
+      console.log("[verifyGoogleIdToken] THẤT BẠI: thiếu email hoặc email_verified không phải true. email_verified=" + data.email_verified);
+      return null;
+    }
+
+    console.log("[verifyGoogleIdToken] THÀNH CÔNG cho email: " + data.email);
     return { email: data.email, name: data.name || data.email };
   } catch (err) {
+    console.log("[verifyGoogleIdToken] EXCEPTION: " + err.message);
     return null;
   }
 }
@@ -428,16 +444,21 @@ function verifyGoogleIdToken(idToken) {
  * để phân biệt tiến độ của từng người trong cùng 1 sheet.
  */
 function handleProgressSync(payload) {
+  console.log("[handleProgressSync] Nhận payload: " + JSON.stringify(payload));
+
   const user = verifyGoogleIdToken(payload.idToken);
   if (!user) {
     return jsonResponse({ success: false, error: "Xác thực Google không hợp lệ hoặc đã hết hạn." });
   }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  console.log("[handleProgressSync] Spreadsheet đang dùng: " + (ss ? ss.getName() : "null"));
+
   let sheet = ss.getSheetByName(SHEET_PROGRESS);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_PROGRESS);
     sheet.appendRow(["Thời gian", "Email", "Tên", "Vocab ID", "Hành động", "Giá trị"]);
+    console.log("[handleProgressSync] Đã tạo sheet mới: " + SHEET_PROGRESS);
   }
 
   sheet.appendRow([

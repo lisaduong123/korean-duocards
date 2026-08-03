@@ -131,3 +131,28 @@ Mở trực tiếp `index.html` bằng trình duyệt, hoặc dùng 1 static ser
 Nếu sau này vẫn gặp lỗi `404` với thông báo kiểu "model ... is not found" hoặc "no longer available":
 1. Kiểm tra chắc chắn đang test qua link GitHub Pages thật (không phải mở file `index.html` trực tiếp) và đã hard-refresh (Ctrl+Shift+R) để loại trừ cache trình duyệt.
 2. Nếu vẫn lỗi, có thể alias `-latest` cũng đã bị đổi tên/ngừng hỗ trợ — vào `https://aistudio.google.com`, chọn "Get code" ở 1 model bất kỳ để xem tên model hiện tại Google đang đề xuất cho tài khoản của bạn, rồi cập nhật lại trong `app.js`.
+
+## 9. Debug Google Apps Script bằng `clasp` (khi đồng bộ tiến độ không hoạt động)
+
+Nếu đăng nhập Google trong app thành công, request có gửi tới `script.google.com`, nhưng sheet `Tiến Độ Học` vẫn không có dữ liệu mới — đây là quy trình đã dùng để chẩn đoán và sửa tận gốc, giữ lại để lần sau không phải làm lại từ đầu.
+
+**Công cụ:** [`clasp`](https://github.com/google/clasp) — CLI chính thức của Google để quản lý Apps Script từ terminal, thay vì copy-paste tay qua giao diện web (vốn dễ gây ra tình trạng "tưởng đã cập nhật nhưng thực ra chưa").
+
+```bash
+npm install -g @google/clasp
+clasp login          # đăng nhập Google, mở trình duyệt để xác nhận
+clasp clone <scriptId>   # scriptId lấy ở Apps Script editor > ⚙️ Project Settings
+clasp push --force       # đẩy code local lên Apps Script (ghi đè HEAD)
+clasp deployments        # liệt kê các deployment và version chúng đang trỏ tới
+clasp deploy --deploymentId <id> --description "..."   # tạo version mới TỪ HEAD và gắn vào đúng deployment đang dùng
+```
+
+Lưu ý: cần bật **Google Apps Script API** tại `https://script.google.com/home/usersettings` trước khi `clasp` hoạt động được (tài khoản Google báo lỗi `User has not enabled the Apps Script API` nếu chưa bật).
+
+**2 nguyên nhân thực tế đã gặp, theo đúng thứ tự đã chẩn đoán:**
+
+1. **Deployment bị ghim vào version cũ, không phải HEAD.** `clasp deployments` cho thấy deployment ứng với URL `.../exec` đang dùng bị gắn vào 1 "version" cụ thể (snapshot), không tự động cập nhật theo code mới nhất trong editor — dù bạn đã "dán đè" code mới và bấm "Deploy" trên giao diện web, deployment vẫn có thể không thực sự tạo version mới nếu thao tác trên UI không đúng. Cách sửa chắc chắn 100%: `clasp deploy --deploymentId <id đúng bằng URL đang dùng>` — lệnh này luôn tạo version mới từ HEAD hiện tại và gắn thẳng vào deployment đó.
+
+2. **Thiếu quyền `script.external_request` cho `UrlFetchApp`.** Khi thêm đoạn code gọi ra ngoài (`UrlFetchApp.fetch` tới `oauth2.googleapis.com` để xác thực Google ID token), Apps Script cần được cấp quyền mới. Vì `appsscript.json` gốc không khai báo `oauthScopes` rõ ràng, và code được đẩy lên qua API (`clasp push`) thay vì lưu trực tiếp trên trình duyệt, màn hình xin quyền không tự bật lên — khiến `UrlFetchApp.fetch` luôn ném lỗi `You do not have permission to call UrlFetchApp.fetch`, bị code tự bắt lỗi (`catch`) và trả về `null` một cách im lặng (không có gì hiện ra ở Executions). Cách sửa: khai báo rõ `oauthScopes` trong `gas/appsscript.json` (đã làm, xem file này trong repo), push lại, rồi vào Apps Script editor chạy tay 1 hàm bất kỳ có gọi `UrlFetchApp` để màn hình "Authorization required" hiện ra và cấp quyền.
+
+**Mẹo debug nhanh khi gặp lại tình trạng tương tự:** viết 1 hàm tạm kiểu `function testXyz() { ... }` gọi trực tiếp hàm nghi ngờ với dữ liệu thật, `clasp push`, rồi vào editor chọn đúng hàm đó ở dropdown và bấm Run — "Execution log" hiện ra ngay dưới sẽ show đầy đủ `console.log` và exception thật, đáng tin cậy hơn nhiều so với xem qua mục "Executions" của 1 lần gọi `doPost` từ xa.
