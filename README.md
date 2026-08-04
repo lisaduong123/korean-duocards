@@ -119,6 +119,16 @@ Mở trực tiếp `index.html` bằng trình duyệt, hoặc dùng 1 static ser
 - Gemini API Key: `localStorage`, riêng theo từng người dùng, không gửi lên đâu ngoài Google Gemini API.
 - Tiến độ đồng bộ chung (chỉ khi đã đăng nhập Google): Google Sheet, sheet `Tiến Độ Học`.
 
+### 6.1. Ý nghĩa các cột trong sheet `Tiến Độ Học`
+
+| Cột | Ý nghĩa |
+|---|---|
+| Thời gian | Thời điểm server ghi nhận dòng dữ liệu (giờ server Google, không phải giờ trình duyệt người dùng). |
+| Email / Tên | Danh tính đã được xác thực qua Google ID token — không thể giả mạo, do chính `Code.gs` kiểm tra với Google trước khi ghi. |
+| **Vocab ID** | ID của từ vựng, khớp với trường `id` trong mảng `VOCAB_DATA` ở đầu file `app.js` (hiện đánh số 1–20, mỗi số ứng với đúng 1 từ, ví dụ `id: 1` là "안녕하세요"). Muốn tra từ nào ứng với ID nào thì mở `app.js`, tìm `id: <số đó>`. |
+| Hành động | Một trong 3 giá trị: `remember` (bấm "Đã nhớ" ở tab Flashcard), `forget` (bấm "Chưa nhớ"), hoặc `ai_grading` (dùng tính năng chấm điểm AI ở tab Tra cứu & AI). |
+| **Giá trị** | Ý nghĩa phụ thuộc vào cột "Hành động": với `remember`/`forget` là **cấp độ SRS** sau khi cập nhật (số nguyên 0–6, càng cao nghĩa là càng nhớ chắc — xem mảng `SRS_INTERVALS_DAYS` trong `app.js` để biết mỗi cấp độ ứng với bao lâu mới ôn lại); với `ai_grading` là **điểm số AI chấm** cho bản dịch (thang 0–10). |
+
 ## 7. Lưu ý bảo mật
 
 - Repo này là **public** — không bao giờ hardcode Gemini API Key hoặc bất kỳ secret nào tốn phí vào code, vì ai cũng đọc được trên GitHub.
