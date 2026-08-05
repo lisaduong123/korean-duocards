@@ -13,15 +13,24 @@
 - **Tra cứu từ vựng:** tìm kiếm nhanh theo tiếng Hàn / romaja / tiếng Việt.
 - **AI chấm điểm bản dịch:** dán Gemini API Key của riêng bạn để AI chấm điểm bản dịch Hàn → Việt. Key chỉ lưu trong `localStorage` của trình duyệt người dùng đó, ai dùng key của người ấy — không lộ, không dùng chung.
 - **Đăng nhập Google & đồng bộ tiến độ chung:** đăng nhập bằng Google để tự động lưu tiến độ học (đã nhớ/chưa nhớ) lên 1 Google Sheet dùng chung cho mọi người, thông qua Google Apps Script Web App (`gas/Code.gs`) có xác thực danh tính qua Google ID token.
+- **Thư viện (Library) & Deck cá nhân:** tab "Thư viện" cho xem tất cả deck — **Basic Deck** (20 từ có sẵn, chỉ xem/học, không sửa) và **deck cá nhân tự tạo** (bấm "+" để tạo deck mới, tự thêm/sửa/xoá flashcard). Deck đang chọn sẽ là deck được dùng ở tab Flashcard, Điền từ và Tra cứu.
 
 ## 2. Cấu trúc project
 
 ```
-index.html   Giao diện chính (3 tab: Flashcard, Điền từ, Tra cứu & AI)
+index.html   Giao diện chính (4 tab: Flashcard, Điền từ, Tra cứu & AI, Thư viện)
 style.css    Toàn bộ style
-app.js       Logic app: SRS, cloze test, tra cứu, gọi Gemini API, đăng nhập Google & đồng bộ GAS
+app.js       Logic app: SRS, deck cá nhân, cloze test, tra cứu, gọi Gemini API, đăng nhập Google & đồng bộ GAS
 gas/Code.gs  Google Apps Script: API đọc/ghi Google Sheet + xác thực Google ID token
 ```
+
+### 2.1. Deck cá nhân lưu ở đâu?
+
+Để tránh `app.js` phình to theo thời gian, deck cá nhân **không** được thêm vào mảng `VOCAB_DATA` trong code — mà lưu trong `localStorage` của trình duyệt (`koreanApp_personalDecks_v1`), tương tự cách lưu tiến độ SRS. Basic Deck (20 từ, id 1–20) vẫn nằm cứng trong `app.js` vì đó là bộ từ mẫu dùng chung, không cần sửa/đồng bộ.
+
+Mỗi thẻ cá nhân được cấp 1 ID toàn cục duy nhất bắt đầu từ **21** trở đi (đếm tăng dần, lưu ở `koreanApp_nextVocabId_v1`), để không trùng với ID của Basic Deck khi lưu tiến độ SRS.
+
+**Đánh đổi đã chọn (so với lưu trên Google Sheet):** deck cá nhân chỉ có trên trình duyệt/máy hiện tại, không tự đồng bộ đa thiết bị, và **không** được đồng bộ lên sheet "Tiến Độ Học" dùng chung — vì ID/nội dung deck cá nhân là riêng theo từng người, đưa vào 1 sheet chung sẽ gây nhầm lẫn (2 người khác nhau có thể có thẻ cùng ID nhưng nội dung khác nhau). Nếu sau này cần đồng bộ đa thiết bị, có thể thêm Google Sheets làm lớp đồng bộ tuỳ chọn, tái dùng hạ tầng đăng nhập Google đã có.
 
 ---
 

@@ -41,6 +41,10 @@
         <span class="tab-icon">🤖</span>
         <span>Tra cứu & AI</span>
       </button>
+      <button class="tab-btn" data-tab="library">
+        <span class="tab-icon">📚</span>
+        <span>Thư viện</span>
+      </button>
       <div class="tab-indicator" id="tabIndicator"></div>
     </nav>
 
@@ -50,6 +54,8 @@
       <!-- ===================== TAB 1: FLASHCARD ===================== -->
       <section class="tab-panel active" id="panel-flashcard">
         <div class="panel-inner">
+
+          <p class="active-deck-label" id="flashActiveDeckLabel"></p>
 
           <div class="progress-row">
             <div class="progress-track">
@@ -84,8 +90,8 @@
 
           <div class="empty-state" id="flashEmptyState" style="display:none;">
             <div class="empty-emoji">🎉</div>
-            <h3>Tuyệt vời! Bạn đã ôn hết thẻ hôm nay</h3>
-            <p>Quay lại sau để tiếp tục ôn tập theo lịch lặp lại ngắt quãng.</p>
+            <h3 id="flashEmptyTitle">Tuyệt vời! Bạn đã ôn hết thẻ hôm nay</h3>
+            <p id="flashEmptyText">Quay lại sau để tiếp tục ôn tập theo lịch lặp lại ngắt quãng.</p>
             <button class="btn btn-primary" id="btnReviewAllAgain">Ôn lại toàn bộ từ vựng</button>
           </div>
 
@@ -95,6 +101,8 @@
       <!-- ===================== TAB 2: CLOZE TEST ===================== -->
       <section class="tab-panel" id="panel-cloze">
         <div class="panel-inner">
+
+          <p class="active-deck-label" id="clozeActiveDeckLabel"></p>
 
           <div class="progress-row">
             <div class="progress-track">
@@ -186,6 +194,66 @@
               <button class="btn btn-tertiary btn-sm" id="btnGoogleSignOut" style="display:none;">Đăng xuất</button>
             </div>
 
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ===================== TAB 4: THƯ VIỆN (LIBRARY / DECKS) ===================== -->
+      <section class="tab-panel" id="panel-library">
+        <div class="panel-inner">
+
+          <!-- Danh sách deck -->
+          <div id="deckListView">
+
+            <div class="card-block">
+              <h2 class="block-title">➕ Tạo deck cá nhân mới</h2>
+              <div class="input-with-btn">
+                <input type="text" id="newDeckNameInput" class="input-field" placeholder="Tên deck, ví dụ: Từ vựng công việc">
+                <button class="btn btn-primary btn-sm" id="btnCreateDeck">Tạo deck</button>
+              </div>
+              <p class="hint-text">Deck cá nhân được lưu trên trình duyệt của bạn (localStorage), không làm nặng ứng dụng.</p>
+            </div>
+
+            <div class="deck-grid" id="deckGrid">
+              <!-- injected by JS -->
+            </div>
+          </div>
+
+          <!-- Chi tiết 1 deck cá nhân: thêm/sửa/xoá thẻ -->
+          <div id="deckDetailView" style="display:none;">
+            <button class="btn btn-tertiary btn-sm" id="btnBackToDecks">← Quay lại danh sách deck</button>
+            <h2 class="block-title mt" id="deckDetailTitle">Tên deck</h2>
+
+            <div class="panel-lookup-grid">
+              <div class="card-block">
+                <h3 class="block-title" style="font-size:15px;">📋 Danh sách thẻ trong deck</h3>
+                <div class="vocab-list" id="deckCardList">
+                  <!-- injected by JS -->
+                </div>
+              </div>
+
+              <div class="card-block">
+                <h3 class="block-title" style="font-size:15px;">✏️ Thêm / sửa thẻ</h3>
+                <label class="field-label">Từ tiếng Hàn *</label>
+                <input type="text" id="cardFormKr" class="input-field" placeholder="예: 안녕하세요">
+
+                <label class="field-label mt">Phiên âm (romaja)</label>
+                <input type="text" id="cardFormRomaja" class="input-field" placeholder="annyeonghaseyo">
+
+                <label class="field-label mt">Nghĩa tiếng Việt *</label>
+                <input type="text" id="cardFormVi" class="input-field" placeholder="Xin chào">
+
+                <label class="field-label mt">Câu ví dụ (tuỳ chọn, dùng cho tab Điền từ)</label>
+                <input type="text" id="cardFormExample" class="input-field" placeholder="안녕하세요, 만나서 반갑습니다.">
+
+                <label class="field-label mt">Dịch câu ví dụ</label>
+                <input type="text" id="cardFormExampleVi" class="input-field" placeholder="Xin chào, rất vui được gặp bạn.">
+
+                <button class="btn btn-primary btn-block mt" id="btnSaveCard">Thêm thẻ</button>
+                <p class="hint-text">Câu ví dụ nên chứa đúng từ tiếng Hàn ở trên để tab "Điền từ" có thể tạo chỗ trống chính xác.</p>
+              </div>
+            </div>
           </div>
 
         </div>

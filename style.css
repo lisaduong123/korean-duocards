@@ -162,7 +162,7 @@ body {
   top: 6px;
   left: 6px;
   height: calc(100% - 12px);
-  width: calc(33.333% - 6px);
+  width: calc(25% - 6px);
   background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
   border-radius: 999px;
   z-index: 1;
@@ -223,6 +223,18 @@ body {
   color: var(--color-text-soft);
   min-width: 52px;
   text-align: right;
+}
+
+.active-deck-label {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  margin: 0 0 14px;
+}
+
+.active-deck-label:empty {
+  display: none;
 }
 
 /* ---------------------------------- FLASHCARD ---------------------------------- */
@@ -690,6 +702,80 @@ body {
 .status-mastered {
   background: #d4f7e2;
   color: var(--color-success-dark);
+}
+
+/* ---------------------------------- THƯ VIỆN / DECKS ---------------------------------- */
+.deck-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 22px;
+}
+
+.deck-tile {
+  background: #fff;
+  border-radius: var(--radius-md);
+  padding: 20px;
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.deck-tile-name {
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.deck-tile-count {
+  font-size: 13px;
+  color: var(--color-text-soft);
+}
+
+.deck-tile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+.deck-tile-actions .btn {
+  padding: 10px 14px;
+}
+
+.deck-tile-add {
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--color-primary-light);
+  box-shadow: none;
+  background: var(--color-bg-alt);
+  min-height: 120px;
+  color: var(--color-primary);
+  font-weight: 700;
+  text-align: center;
+}
+
+.deck-tile-add-icon {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.deck-card-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  background: var(--color-bg-alt);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  gap: 10px;
+}
+
+.deck-card-item-actions {
+  display: flex;
+  gap: 8px;
 }
 
 /* AI Result */

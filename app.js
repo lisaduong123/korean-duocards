@@ -51,6 +51,138 @@ const VOCAB_DATA = [
 ];
 
 /* --------------------------------------------------------------------------
+   1b. THƯ VIỆN (LIBRARY) & DECK CÁ NHÂN
+   Basic Deck = VOCAB_DATA ở trên (chỉ xem/học, không sửa được).
+   Personal Decks = do người dùng tự tạo, lưu trong localStorage, không đưa
+   vào app.js để tránh làm file này phình to theo thời gian.
+   -------------------------------------------------------------------------- */
+const BASIC_DECK_ID = "basic";
+const PERSONAL_DECKS_KEY = "koreanApp_personalDecks_v1";
+const ACTIVE_DECK_KEY = "koreanApp_activeDeckId_v1";
+const NEXT_VOCAB_ID_KEY = "koreanApp_nextVocabId_v1";
+
+function loadPersonalDecks() {
+  try {
+    const raw = localStorage.getItem(PERSONAL_DECKS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    console.error("Lỗi đọc dữ liệu Personal Decks:", e);
+    return [];
+  }
+}
+
+function savePersonalDecks(decks) {
+  localStorage.setItem(PERSONAL_DECKS_KEY, JSON.stringify(decks));
+}
+
+let personalDecks = loadPersonalDecks();
+
+function loadNextVocabId() {
+  const raw = localStorage.getItem(NEXT_VOCAB_ID_KEY);
+  const num = raw ? parseInt(raw, 10) : 21;
+  return isNaN(num) ? 21 : num;
+}
+
+function saveNextVocabId(id) {
+  localStorage.setItem(NEXT_VOCAB_ID_KEY, String(id));
+}
+
+let nextVocabId = loadNextVocabId();
+
+function loadActiveDeckId() {
+  return localStorage.getItem(ACTIVE_DECK_KEY) || BASIC_DECK_ID;
+}
+
+function saveActiveDeckId(deckId) {
+  localStorage.setItem(ACTIVE_DECK_KEY, deckId);
+}
+
+let activeDeckId = loadActiveDeckId();
+
+function getAllDecks() {
+  return [
+    { id: BASIC_DECK_ID, name: "Basic Deck", isBasic: true, cards: VOCAB_DATA },
+    ...personalDecks
+  ];
+}
+
+function getDeckById(deckId) {
+  return getAllDecks().find(d => d.id === deckId) || null;
+}
+
+function getActiveDeck() {
+  return getDeckById(activeDeckId) || getDeckById(BASIC_DECK_ID);
+}
+
+function getActiveDeckCards() {
+  return getActiveDeck().cards;
+}
+
+function createPersonalDeck(name) {
+  const deck = { id: "deck_" + Date.now() + "_" + Math.floor(Math.random() * 10000), name, cards: [] };
+  personalDecks.push(deck);
+  savePersonalDecks(personalDecks);
+  return deck;
+}
+
+function deletePersonalDeck(deckId) {
+  const deck = personalDecks.find(d => d.id === deckId);
+  if (deck) {
+    deck.cards.forEach(c => {
+      delete srsProgress[c.id];
+    });
+    saveSrsProgress(srsProgress);
+  }
+  personalDecks = personalDecks.filter(d => d.id !== deckId);
+  savePersonalDecks(personalDecks);
+  if (activeDeckId === deckId) {
+    activeDeckId = BASIC_DECK_ID;
+    saveActiveDeckId(activeDeckId);
+  }
+}
+
+function addCardToDeck(deckId, cardData) {
+  const deck = personalDecks.find(d => d.id === deckId);
+  if (!deck) return null;
+  const card = {
+    id: nextVocabId++,
+    kr: cardData.kr,
+    romaja: cardData.romaja || "",
+    vi: cardData.vi,
+    example: cardData.example || "",
+    exampleVi: cardData.exampleVi || "",
+    blankWord: cardData.kr
+  };
+  deck.cards.push(card);
+  saveNextVocabId(nextVocabId);
+  savePersonalDecks(personalDecks);
+  return card;
+}
+
+function updateCardInDeck(deckId, cardId, cardData) {
+  const deck = personalDecks.find(d => d.id === deckId);
+  if (!deck) return;
+  const card = deck.cards.find(c => c.id === cardId);
+  if (!card) return;
+  card.kr = cardData.kr;
+  card.romaja = cardData.romaja || "";
+  card.vi = cardData.vi;
+  card.example = cardData.example || "";
+  card.exampleVi = cardData.exampleVi || "";
+  card.blankWord = cardData.kr;
+  savePersonalDecks(personalDecks);
+}
+
+function deleteCardFromDeck(deckId, cardId) {
+  const deck = personalDecks.find(d => d.id === deckId);
+  if (!deck) return;
+  deck.cards = deck.cards.filter(c => c.id !== cardId);
+  savePersonalDecks(personalDecks);
+  delete srsProgress[cardId];
+  saveSrsProgress(srsProgress);
+}
+
+/* --------------------------------------------------------------------------
    2. THUẬT TOÁN SPACED REPETITION (SRS) CƠ BẢN
    Mỗi từ có 1 "level" (0 -> 6). Level càng cao, khoảng cách ôn tập càng dài.
    -------------------------------------------------------------------------- */
@@ -89,6 +221,10 @@ function isDue(id) {
   return state.due <= Date.now();
 }
 
+function isBasicDeckCard(id) {
+  return VOCAB_DATA.some(v => v.id === id);
+}
+
 function markRemembered(id) {
   const state = getCardState(id);
   state.level = Math.min(state.level + 1, SRS_INTERVALS_DAYS.length - 1);
@@ -96,7 +232,9 @@ function markRemembered(id) {
   const intervalDays = SRS_INTERVALS_DAYS[state.level];
   state.due = Date.now() + intervalDays * 24 * 60 * 60 * 1000;
   saveSrsProgress(srsProgress);
-  sendProgressToGAS(id, "remember", state.level);
+  // Chỉ đồng bộ lên sheet chung với thẻ thuộc Basic Deck (ID ổn định, giống nhau ở mọi người) —
+  // thẻ deck cá nhân không đồng bộ vì ID/nội dung là riêng theo từng người, dễ gây nhầm lẫn.
+  if (isBasicDeckCard(id)) sendProgressToGAS(id, "remember", state.level);
 }
 
 function markForgotten(id) {
@@ -105,7 +243,7 @@ function markForgotten(id) {
   state.reviews += 1;
   state.due = Date.now() + 5 * 1000; // ôn lại gần như ngay lập tức (5 giây)
   saveSrsProgress(srsProgress);
-  sendProgressToGAS(id, "forget", state.level);
+  if (isBasicDeckCard(id)) sendProgressToGAS(id, "forget", state.level);
 }
 
 function getVocabStatusLabel(id) {
@@ -150,10 +288,20 @@ function showToast(message) {
 }
 
 function updateStatsPill() {
-  const dueCount = VOCAB_DATA.filter(v => isDue(v.id)).length;
-  const masteredCount = VOCAB_DATA.filter(v => getCardState(v.id).level >= 4).length;
+  const cards = getActiveDeckCards();
+  const dueCount = cards.filter(v => isDue(v.id)).length;
+  const masteredCount = cards.filter(v => getCardState(v.id).level >= 4).length;
   document.getElementById("statDue").textContent = dueCount;
   document.getElementById("statLearned").textContent = masteredCount;
+}
+
+function updateActiveDeckLabels() {
+  const deckName = getActiveDeck().name;
+  const text = `📚 Đang học: ${deckName}`;
+  const flashLabel = document.getElementById("flashActiveDeckLabel");
+  const clozeLabel = document.getElementById("clozeActiveDeckLabel");
+  if (flashLabel) flashLabel.textContent = text;
+  if (clozeLabel) clozeLabel.textContent = text;
 }
 
 /* --------------------------------------------------------------------------
@@ -197,6 +345,8 @@ function switchTab(tabName, index) {
     refreshClozeQueue();
   } else if (tabName === "lookup") {
     renderVocabList();
+  } else if (tabName === "library") {
+    showDeckListView();
   }
 }
 
@@ -204,7 +354,8 @@ function switchTab(tabName, index) {
    6. TAB 1 — FLASHCARD + SRS
    -------------------------------------------------------------------------- */
 function refreshFlashQueue() {
-  flashQueue = VOCAB_DATA.filter(v => isDue(v.id));
+  updateActiveDeckLabels();
+  flashQueue = getActiveDeckCards().filter(v => isDue(v.id));
   flashIndex = 0;
   isFlipped = false;
   renderFlashcard();
@@ -216,13 +367,27 @@ function renderFlashcard() {
   const actions = document.getElementById("flashActions");
   const emptyState = document.getElementById("flashEmptyState");
   const flashcardEl = document.getElementById("flashcard");
+  const totalCards = getActiveDeckCards().length;
 
   if (flashQueue.length === 0 || flashIndex >= flashQueue.length) {
     zone.style.display = "none";
     actions.style.display = "none";
     emptyState.style.display = "block";
     document.getElementById("flashProgressFill").style.width = "100%";
-    document.getElementById("flashProgressLabel").textContent = `${VOCAB_DATA.length} / ${VOCAB_DATA.length}`;
+    document.getElementById("flashProgressLabel").textContent = `${totalCards} / ${totalCards}`;
+
+    const emptyTitle = document.getElementById("flashEmptyTitle");
+    const emptyText = document.getElementById("flashEmptyText");
+    const reviewBtn = document.getElementById("btnReviewAllAgain");
+    if (totalCards === 0) {
+      emptyTitle.textContent = "Deck này chưa có thẻ nào";
+      emptyText.textContent = "Vào tab Thư viện để thêm flashcard cho deck này nhé.";
+      reviewBtn.style.display = "none";
+    } else {
+      emptyTitle.textContent = "Tuyệt vời! Bạn đã ôn hết thẻ hôm nay";
+      emptyText.textContent = "Quay lại sau để tiếp tục ôn tập theo lịch lặp lại ngắt quãng.";
+      reviewBtn.style.display = "inline-flex";
+    }
     return;
   }
 
@@ -245,7 +410,7 @@ function renderFlashcard() {
   if (state.reviews === 0) levelBadge.textContent = "Mới";
   else levelBadge.textContent = `Cấp độ ${state.level}`;
 
-  const total = VOCAB_DATA.length;
+  const total = totalCards;
   const done = total - flashQueue.length + flashIndex;
   document.getElementById("flashProgressFill").style.width = `${(done / total) * 100}%`;
   document.getElementById("flashProgressLabel").textContent = `${done} / ${total}`;
@@ -282,7 +447,7 @@ function initFlashcardTab() {
   });
 
   document.getElementById("btnReviewAllAgain").addEventListener("click", () => {
-    VOCAB_DATA.forEach(v => {
+    getActiveDeckCards().forEach(v => {
       const state = getCardState(v.id);
       state.due = Date.now();
     });
@@ -295,7 +460,8 @@ function initFlashcardTab() {
    7. TAB 2 — CLOZE TEST (ĐIỀN TỪ)
    -------------------------------------------------------------------------- */
 function refreshClozeQueue() {
-  clozeQueue = shuffleArray(VOCAB_DATA);
+  updateActiveDeckLabels();
+  clozeQueue = shuffleArray(getActiveDeckCards().filter(v => v.example && v.example.trim()));
   clozeIndex = 0;
   clozeAnswered = false;
   renderClozeQuestion();
@@ -303,7 +469,7 @@ function refreshClozeQueue() {
 
 function buildClozeOptions(correctWord) {
   const distractors = shuffleArray(
-    VOCAB_DATA.filter(v => v.blankWord !== correctWord).map(v => v.blankWord)
+    getActiveDeckCards().filter(v => v.blankWord !== correctWord).map(v => v.blankWord)
   ).slice(0, 3);
   return shuffleArray([correctWord, ...distractors]);
 }
@@ -316,18 +482,23 @@ function renderClozeQuestion() {
   document.getElementById("clozeFeedback").className = "cloze-feedback";
 
   if (clozeIndex >= total) {
-    document.getElementById("clozeSentence").innerHTML =
-      "🎉 Bạn đã hoàn thành toàn bộ bài tập điền từ!";
-    document.getElementById("clozeTranslation").textContent = "";
+    document.getElementById("clozeSentence").innerHTML = total === 0
+      ? "Deck này chưa có câu ví dụ nào để làm bài điền từ."
+      : "🎉 Bạn đã hoàn thành toàn bộ bài tập điền từ!";
+    document.getElementById("clozeTranslation").textContent = total === 0
+      ? "Vào tab Thư viện để thêm thẻ có kèm câu ví dụ."
+      : "";
     document.getElementById("clozeOptions").innerHTML = "";
     document.getElementById("clozeProgressFill").style.width = "100%";
     document.getElementById("clozeProgressLabel").textContent = `${total} / ${total}`;
 
-    const restartBtn = document.createElement("button");
-    restartBtn.className = "btn btn-primary btn-block";
-    restartBtn.textContent = "Làm lại từ đầu";
-    restartBtn.addEventListener("click", refreshClozeQueue);
-    document.getElementById("clozeOptions").appendChild(restartBtn);
+    if (total > 0) {
+      const restartBtn = document.createElement("button");
+      restartBtn.className = "btn btn-primary btn-block";
+      restartBtn.textContent = "Làm lại từ đầu";
+      restartBtn.addEventListener("click", refreshClozeQueue);
+      document.getElementById("clozeOptions").appendChild(restartBtn);
+    }
     return;
   }
 
@@ -406,10 +577,10 @@ function renderVocabList(filterText = "") {
   listEl.innerHTML = "";
 
   const query = filterText.trim().toLowerCase();
-  const filtered = VOCAB_DATA.filter(v =>
+  const filtered = getActiveDeckCards().filter(v =>
     v.kr.toLowerCase().includes(query) ||
     v.vi.toLowerCase().includes(query) ||
-    v.romaja.toLowerCase().includes(query)
+    (v.romaja || "").toLowerCase().includes(query)
   );
 
   if (filtered.length === 0) {
@@ -467,9 +638,200 @@ function initLookupTab() {
 let currentSampleSentence = null;
 
 function pickRandomSampleSentence() {
-  const randomItem = VOCAB_DATA[Math.floor(Math.random() * VOCAB_DATA.length)];
+  let pool = getActiveDeckCards().filter(v => v.example && v.example.trim());
+  if (pool.length === 0) pool = VOCAB_DATA;
+  const randomItem = pool[Math.floor(Math.random() * pool.length)];
   currentSampleSentence = randomItem;
   document.getElementById("sampleSentenceBox").textContent = randomItem.example;
+}
+
+/* --------------------------------------------------------------------------
+   8b. TAB 4 — THƯ VIỆN (LIBRARY / DECKS)
+   -------------------------------------------------------------------------- */
+let editingDeckId = null; // deck đang được quản lý thẻ (trong deckDetailView)
+let editingCardId = null; // null = đang thêm thẻ mới, có giá trị = đang sửa thẻ đó
+
+function initLibraryTab() {
+  document.getElementById("btnCreateDeck").addEventListener("click", () => {
+    const input = document.getElementById("newDeckNameInput");
+    const name = input.value.trim();
+    if (!name) {
+      showToast("Vui lòng nhập tên deck");
+      return;
+    }
+    createPersonalDeck(name);
+    input.value = "";
+    showToast(`✓ Đã tạo deck "${name}"`);
+    renderDeckGrid();
+  });
+
+  document.getElementById("btnBackToDecks").addEventListener("click", showDeckListView);
+
+  document.getElementById("btnSaveCard").addEventListener("click", handleSaveCard);
+}
+
+function showDeckListView() {
+  editingDeckId = null;
+  document.getElementById("deckListView").style.display = "block";
+  document.getElementById("deckDetailView").style.display = "none";
+  renderDeckGrid();
+}
+
+function renderDeckGrid() {
+  const grid = document.getElementById("deckGrid");
+  grid.innerHTML = "";
+
+  getAllDecks().forEach(deck => {
+    const tile = document.createElement("div");
+    tile.className = "deck-tile";
+    tile.innerHTML = `
+      <div class="deck-tile-name">${deck.isBasic ? "📖" : "📁"} ${deck.name}</div>
+      <div class="deck-tile-count">${deck.cards.length} thẻ</div>
+      <div class="deck-tile-actions"></div>
+    `;
+
+    const actionsEl = tile.querySelector(".deck-tile-actions");
+
+    const studyBtn = document.createElement("button");
+    studyBtn.className = "btn btn-primary btn-sm";
+    studyBtn.textContent = "Học deck này";
+    studyBtn.addEventListener("click", () => selectDeckAndStudy(deck.id));
+    actionsEl.appendChild(studyBtn);
+
+    if (!deck.isBasic) {
+      const manageBtn = document.createElement("button");
+      manageBtn.className = "btn btn-secondary btn-sm";
+      manageBtn.textContent = "Quản lý";
+      manageBtn.addEventListener("click", () => openDeckDetail(deck.id));
+      actionsEl.appendChild(manageBtn);
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "btn btn-tertiary btn-sm";
+      deleteBtn.textContent = "Xoá";
+      deleteBtn.addEventListener("click", () => {
+        if (!confirm(`Xoá deck "${deck.name}" và toàn bộ thẻ trong đó?`)) return;
+        deletePersonalDeck(deck.id);
+        showToast(`Đã xoá deck "${deck.name}"`);
+        renderDeckGrid();
+      });
+      actionsEl.appendChild(deleteBtn);
+    }
+
+    grid.appendChild(tile);
+  });
+
+  const addTile = document.createElement("div");
+  addTile.className = "deck-tile deck-tile-add";
+  addTile.innerHTML = `<div class="deck-tile-add-icon">+</div><div>Deck mới ở form trên</div>`;
+  grid.appendChild(addTile);
+}
+
+function selectDeckAndStudy(deckId) {
+  activeDeckId = deckId;
+  saveActiveDeckId(deckId);
+  switchTab("flashcard", 0);
+}
+
+function openDeckDetail(deckId) {
+  editingDeckId = deckId;
+  editingCardId = null;
+  const deck = getDeckById(deckId);
+  if (!deck) return;
+
+  document.getElementById("deckListView").style.display = "none";
+  document.getElementById("deckDetailView").style.display = "block";
+  document.getElementById("deckDetailTitle").textContent = `📁 ${deck.name}`;
+  resetCardForm();
+  renderDeckCardList();
+}
+
+function resetCardForm() {
+  editingCardId = null;
+  document.getElementById("cardFormKr").value = "";
+  document.getElementById("cardFormRomaja").value = "";
+  document.getElementById("cardFormVi").value = "";
+  document.getElementById("cardFormExample").value = "";
+  document.getElementById("cardFormExampleVi").value = "";
+  document.getElementById("btnSaveCard").textContent = "Thêm thẻ";
+}
+
+function handleSaveCard() {
+  const kr = document.getElementById("cardFormKr").value.trim();
+  const vi = document.getElementById("cardFormVi").value.trim();
+  const romaja = document.getElementById("cardFormRomaja").value.trim();
+  const example = document.getElementById("cardFormExample").value.trim();
+  const exampleVi = document.getElementById("cardFormExampleVi").value.trim();
+
+  if (!kr || !vi) {
+    showToast("⚠️ Vui lòng nhập ít nhất Từ tiếng Hàn và Nghĩa tiếng Việt");
+    return;
+  }
+
+  const cardData = { kr, vi, romaja, example, exampleVi };
+
+  if (editingCardId !== null) {
+    updateCardInDeck(editingDeckId, editingCardId, cardData);
+    showToast("✓ Đã cập nhật thẻ");
+  } else {
+    addCardToDeck(editingDeckId, cardData);
+    showToast("✓ Đã thêm thẻ mới");
+  }
+
+  resetCardForm();
+  renderDeckCardList();
+}
+
+function renderDeckCardList() {
+  const listEl = document.getElementById("deckCardList");
+  listEl.innerHTML = "";
+
+  const deck = getDeckById(editingDeckId);
+  if (!deck || deck.cards.length === 0) {
+    listEl.innerHTML = `<p style="color:var(--color-text-soft); font-size:14px;">Deck này chưa có thẻ nào.</p>`;
+    return;
+  }
+
+  deck.cards.forEach(card => {
+    const item = document.createElement("div");
+    item.className = "deck-card-item";
+    item.innerHTML = `
+      <div>
+        <div class="vocab-item-kr">${card.kr}</div>
+        <div class="vocab-item-romaja">${card.romaja || ""}</div>
+      </div>
+      <div class="vocab-item-vi">${card.vi}</div>
+      <div class="deck-card-item-actions"></div>
+    `;
+
+    const actionsEl = item.querySelector(".deck-card-item-actions");
+
+    const editBtn = document.createElement("button");
+    editBtn.className = "btn btn-secondary btn-sm";
+    editBtn.textContent = "Sửa";
+    editBtn.addEventListener("click", () => {
+      editingCardId = card.id;
+      document.getElementById("cardFormKr").value = card.kr;
+      document.getElementById("cardFormRomaja").value = card.romaja || "";
+      document.getElementById("cardFormVi").value = card.vi;
+      document.getElementById("cardFormExample").value = card.example || "";
+      document.getElementById("cardFormExampleVi").value = card.exampleVi || "";
+      document.getElementById("btnSaveCard").textContent = "Cập nhật thẻ";
+    });
+    actionsEl.appendChild(editBtn);
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "btn btn-tertiary btn-sm";
+    deleteBtn.textContent = "Xoá";
+    deleteBtn.addEventListener("click", () => {
+      if (!confirm(`Xoá thẻ "${card.kr}"?`)) return;
+      deleteCardFromDeck(editingDeckId, card.id);
+      if (editingCardId === card.id) resetCardForm();
+      renderDeckCardList();
+    });
+    actionsEl.appendChild(deleteBtn);
+
+    listEl.appendChild(item);
+  });
 }
 
 /* --------------------------------------------------------------------------
@@ -509,7 +871,9 @@ async function handleGradeTranslation() {
     document.getElementById("aiScoreBadge").textContent = feedback.score !== null ? `${feedback.score}/10` : "N/A";
     document.getElementById("aiResultText").textContent = feedback.text;
 
-    sendProgressToGAS(currentSampleSentence.id, "ai_grading", feedback.score);
+    if (isBasicDeckCard(currentSampleSentence.id)) {
+      sendProgressToGAS(currentSampleSentence.id, "ai_grading", feedback.score);
+    }
   } catch (err) {
     console.error("Lỗi khi gọi Gemini API:", err);
     resultBox.style.display = "block";
@@ -651,6 +1015,7 @@ function initApp() {
   initFlashcardTab();
   initClozeTab();
   initLookupTab();
+  initLibraryTab();
 
   refreshFlashQueue();
   updateStatsPill();
