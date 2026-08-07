@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>한국어 마스터 - Học Tiếng Hàn Cùng Flashcard</title>
 <link rel="stylesheet" href="style.css">
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 </head>
 <body>
 
@@ -178,19 +179,7 @@
             <div class="gsync-block">
               <h3 class="field-label mt">☁️ Đồng bộ tiến độ học</h3>
               <p class="hint-text" id="gsyncStatusText">Đăng nhập Google để tự động lưu tiến độ học (đã nhớ/chưa nhớ) lên hệ thống chung.</p>
-              <div id="g_id_onload"
-                   data-client_id="238871865056-9fc3keghvjlfipmbmdjtqiaj7b72lbpk.apps.googleusercontent.com"
-                   data-callback="handleGoogleCredentialResponse"
-                   data-auto_prompt="false">
-              </div>
-              <div class="g_id_signin" id="googleSignInButton"
-                   data-type="standard"
-                   data-size="large"
-                   data-theme="outline"
-                   data-text="signin_with"
-                   data-shape="rectangular"
-                   data-logo_alignment="left">
-              </div>
+              <button class="btn btn-secondary btn-sm" id="btnGoogleSignIn">🔑 Đăng nhập bằng Google</button>
               <button class="btn btn-tertiary btn-sm" id="btnGoogleSignOut" style="display:none;">Đăng xuất</button>
             </div>
 
@@ -206,13 +195,20 @@
           <!-- Danh sách deck -->
           <div id="deckListView">
 
-            <div class="card-block">
-              <h2 class="block-title">➕ Tạo deck cá nhân mới</h2>
-              <div class="input-with-btn">
-                <input type="text" id="newDeckNameInput" class="input-field" placeholder="Tên deck, ví dụ: Từ vựng công việc">
-                <button class="btn btn-primary btn-sm" id="btnCreateDeck">Tạo deck</button>
+            <div class="card-block" id="libraryLoginPrompt" style="display:none;">
+              <h2 class="block-title">🔒 Cần đăng nhập để tạo deck cá nhân</h2>
+              <p class="hint-text">Deck cá nhân được lưu trên Google Sheet gắn theo tài khoản của bạn — vào tab "Tra cứu & AI" để đăng nhập Google trước. Basic Deck vẫn học được bình thường không cần đăng nhập.</p>
+            </div>
+
+            <div id="personalDecksSection">
+              <div class="card-block">
+                <h2 class="block-title">➕ Tạo deck cá nhân mới</h2>
+                <div class="input-with-btn">
+                  <input type="text" id="newDeckNameInput" class="input-field" placeholder="Tên deck, ví dụ: Từ vựng công việc">
+                  <button class="btn btn-primary btn-sm" id="btnCreateDeck">Tạo deck</button>
+                </div>
+                <p class="hint-text">Deck cá nhân được lưu trên Google Sheet của bạn, đồng bộ theo tài khoản Google đã đăng nhập.</p>
               </div>
-              <p class="hint-text">Deck cá nhân được lưu trên trình duyệt của bạn (localStorage), không làm nặng ứng dụng.</p>
             </div>
 
             <div class="deck-grid" id="deckGrid">

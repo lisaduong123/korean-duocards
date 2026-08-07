@@ -53,41 +53,15 @@ const VOCAB_DATA = [
 /* --------------------------------------------------------------------------
    1b. THƯ VIỆN (LIBRARY) & DECK CÁ NHÂN
    Basic Deck = VOCAB_DATA ở trên (chỉ xem/học, không sửa được).
-   Personal Decks = do người dùng tự tạo, lưu trong localStorage, không đưa
-   vào app.js để tránh làm file này phình to theo thời gian.
+   Personal Decks = do người dùng tự tạo, lưu trên Google Sheet qua GAS
+   (sheet "Decks Cá Nhân"), gắn theo email đã đăng nhập Google — cần đăng
+   nhập mới tạo/quản lý được, tránh làm app.js phình to theo thời gian.
    -------------------------------------------------------------------------- */
 const BASIC_DECK_ID = "basic";
-const PERSONAL_DECKS_KEY = "koreanApp_personalDecks_v1";
 const ACTIVE_DECK_KEY = "koreanApp_activeDeckId_v1";
-const NEXT_VOCAB_ID_KEY = "koreanApp_nextVocabId_v1";
 
-function loadPersonalDecks() {
-  try {
-    const raw = localStorage.getItem(PERSONAL_DECKS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    console.error("Lỗi đọc dữ liệu Personal Decks:", e);
-    return [];
-  }
-}
-
-function savePersonalDecks(decks) {
-  localStorage.setItem(PERSONAL_DECKS_KEY, JSON.stringify(decks));
-}
-
-let personalDecks = loadPersonalDecks();
-
-function loadNextVocabId() {
-  const raw = localStorage.getItem(NEXT_VOCAB_ID_KEY);
-  const num = raw ? parseInt(raw, 10) : 21;
-  return isNaN(num) ? 21 : num;
-}
-
-function saveNextVocabId(id) {
-  localStorage.setItem(NEXT_VOCAB_ID_KEY, String(id));
-}
-
-let nextVocabId = loadNextVocabId();
+let personalDecks = [];
+let decksLoaded = false;
 
 function loadActiveDeckId() {
   return localStorage.getItem(ACTIVE_DECK_KEY) || BASIC_DECK_ID;
@@ -118,66 +92,133 @@ function getActiveDeckCards() {
   return getActiveDeck().cards;
 }
 
-function createPersonalDeck(name) {
-  const deck = { id: "deck_" + Date.now() + "_" + Math.floor(Math.random() * 10000), name, cards: [] };
+/** Gọi Google Apps Script và đọc JSON trả về (khác sendProgressToGAS: cần đọc kết quả nên không dùng no-cors). */
+async function callGAS(payload) {
+  const response = await fetch(GAS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload)
+  });
+  return response.json();
+}
+
+async function fetchPersonalDecks() {
+  const user = firebaseAuth.currentUser;
+  if (!user) {
+    personalDecks = [];
+    decksLoaded = true;
+    return;
+  }
+  try {
+    const idToken = await user.getIdToken();
+    const result = await callGAS({ mode: "listDecks", idToken });
+    personalDecks = result.success ? result.decks : [];
+    if (!result.success) console.warn("Không tải được deck cá nhân:", result.error);
+  } catch (err) {
+    console.warn("Lỗi khi tải deck cá nhân:", err);
+    personalDecks = [];
+  } finally {
+    decksLoaded = true;
+  }
+}
+
+async function createPersonalDeck(name) {
+  const user = firebaseAuth.currentUser;
+  if (!user) return null;
+  const idToken = await user.getIdToken();
+  const result = await callGAS({ mode: "createDeck", idToken, deckName: name });
+  if (!result.success) {
+    showToast("⚠️ Không tạo được deck: " + (result.error || "Lỗi không rõ"));
+    return null;
+  }
+  const deck = { id: result.deckId, name: result.name, cards: [] };
   personalDecks.push(deck);
-  savePersonalDecks(personalDecks);
   return deck;
 }
 
-function deletePersonalDeck(deckId) {
+async function deletePersonalDeck(deckId) {
+  const user = firebaseAuth.currentUser;
+  if (!user) return;
+  const idToken = await user.getIdToken();
+  const result = await callGAS({ mode: "deleteDeck", idToken, deckId });
+  if (!result.success) {
+    showToast("⚠️ Không xoá được deck: " + (result.error || "Lỗi không rõ"));
+    return;
+  }
   const deck = personalDecks.find(d => d.id === deckId);
   if (deck) {
-    deck.cards.forEach(c => {
-      delete srsProgress[c.id];
-    });
+    deck.cards.forEach(c => delete srsProgress[c.id]);
     saveSrsProgress(srsProgress);
   }
   personalDecks = personalDecks.filter(d => d.id !== deckId);
-  savePersonalDecks(personalDecks);
   if (activeDeckId === deckId) {
     activeDeckId = BASIC_DECK_ID;
     saveActiveDeckId(activeDeckId);
   }
 }
 
-function addCardToDeck(deckId, cardData) {
+async function addCardToDeck(deckId, cardData) {
+  const user = firebaseAuth.currentUser;
+  if (!user) return null;
   const deck = personalDecks.find(d => d.id === deckId);
   if (!deck) return null;
+
+  const idToken = await user.getIdToken();
+  const result = await callGAS({
+    mode: "addCard", idToken, deckId, deckName: deck.name,
+    kr: cardData.kr, romaja: cardData.romaja || "", vi: cardData.vi,
+    example: cardData.example || "", exampleVi: cardData.exampleVi || ""
+  });
+  if (!result.success) {
+    showToast("⚠️ Không thêm được thẻ: " + (result.error || "Lỗi không rõ"));
+    return null;
+  }
+
   const card = {
-    id: nextVocabId++,
-    kr: cardData.kr,
-    romaja: cardData.romaja || "",
-    vi: cardData.vi,
-    example: cardData.example || "",
-    exampleVi: cardData.exampleVi || "",
-    blankWord: cardData.kr
+    id: result.cardId, kr: cardData.kr, romaja: cardData.romaja || "", vi: cardData.vi,
+    example: cardData.example || "", exampleVi: cardData.exampleVi || "", blankWord: cardData.kr
   };
   deck.cards.push(card);
-  saveNextVocabId(nextVocabId);
-  savePersonalDecks(personalDecks);
   return card;
 }
 
-function updateCardInDeck(deckId, cardId, cardData) {
+async function updateCardInDeck(deckId, cardId, cardData) {
+  const user = firebaseAuth.currentUser;
+  if (!user) return;
   const deck = personalDecks.find(d => d.id === deckId);
-  if (!deck) return;
-  const card = deck.cards.find(c => c.id === cardId);
+  const card = deck && deck.cards.find(c => c.id === cardId);
   if (!card) return;
+
+  const idToken = await user.getIdToken();
+  const result = await callGAS({
+    mode: "updateCard", idToken, deckId, cardId,
+    kr: cardData.kr, romaja: cardData.romaja || "", vi: cardData.vi,
+    example: cardData.example || "", exampleVi: cardData.exampleVi || ""
+  });
+  if (!result.success) {
+    showToast("⚠️ Không cập nhật được thẻ: " + (result.error || "Lỗi không rõ"));
+    return;
+  }
+
   card.kr = cardData.kr;
   card.romaja = cardData.romaja || "";
   card.vi = cardData.vi;
   card.example = cardData.example || "";
   card.exampleVi = cardData.exampleVi || "";
   card.blankWord = cardData.kr;
-  savePersonalDecks(personalDecks);
 }
 
-function deleteCardFromDeck(deckId, cardId) {
+async function deleteCardFromDeck(deckId, cardId) {
+  const user = firebaseAuth.currentUser;
+  if (!user) return;
+  const idToken = await user.getIdToken();
+  const result = await callGAS({ mode: "deleteCard", idToken, deckId, cardId });
+  if (!result.success) {
+    showToast("⚠️ Không xoá được thẻ: " + (result.error || "Lỗi không rõ"));
+    return;
+  }
   const deck = personalDecks.find(d => d.id === deckId);
-  if (!deck) return;
-  deck.cards = deck.cards.filter(c => c.id !== cardId);
-  savePersonalDecks(personalDecks);
+  if (deck) deck.cards = deck.cards.filter(c => c.id !== cardId);
   delete srsProgress[cardId];
   saveSrsProgress(srsProgress);
 }
@@ -652,17 +693,19 @@ let editingDeckId = null; // deck đang được quản lý thẻ (trong deckDet
 let editingCardId = null; // null = đang thêm thẻ mới, có giá trị = đang sửa thẻ đó
 
 function initLibraryTab() {
-  document.getElementById("btnCreateDeck").addEventListener("click", () => {
+  document.getElementById("btnCreateDeck").addEventListener("click", async () => {
     const input = document.getElementById("newDeckNameInput");
     const name = input.value.trim();
     if (!name) {
       showToast("Vui lòng nhập tên deck");
       return;
     }
-    createPersonalDeck(name);
-    input.value = "";
-    showToast(`✓ Đã tạo deck "${name}"`);
-    renderDeckGrid();
+    const deck = await createPersonalDeck(name);
+    if (deck) {
+      input.value = "";
+      showToast(`✓ Đã tạo deck "${name}"`);
+      renderDeckGrid();
+    }
   });
 
   document.getElementById("btnBackToDecks").addEventListener("click", showDeckListView);
@@ -670,15 +713,28 @@ function initLibraryTab() {
   document.getElementById("btnSaveCard").addEventListener("click", handleSaveCard);
 }
 
-function showDeckListView() {
+async function showDeckListView() {
   editingDeckId = null;
   document.getElementById("deckListView").style.display = "block";
   document.getElementById("deckDetailView").style.display = "none";
+
+  if (!decksLoaded || firebaseAuth.currentUser) {
+    // Tải lại mỗi lần vào tab để phản ánh đúng trạng thái đăng nhập hiện tại.
+    document.getElementById("deckGrid").innerHTML = `<p style="color:var(--color-text-soft); font-size:14px;">Đang tải deck...</p>`;
+    await fetchPersonalDecks();
+  }
   renderDeckGrid();
 }
 
 function renderDeckGrid() {
   const grid = document.getElementById("deckGrid");
+  const loginPrompt = document.getElementById("libraryLoginPrompt");
+  const personalSection = document.getElementById("personalDecksSection");
+  const isLoggedIn = !!firebaseAuth.currentUser;
+
+  loginPrompt.style.display = isLoggedIn ? "none" : "block";
+  personalSection.style.display = isLoggedIn ? "block" : "none";
+
   grid.innerHTML = "";
 
   getAllDecks().forEach(deck => {
@@ -708,9 +764,9 @@ function renderDeckGrid() {
       const deleteBtn = document.createElement("button");
       deleteBtn.className = "btn btn-tertiary btn-sm";
       deleteBtn.textContent = "Xoá";
-      deleteBtn.addEventListener("click", () => {
+      deleteBtn.addEventListener("click", async () => {
         if (!confirm(`Xoá deck "${deck.name}" và toàn bộ thẻ trong đó?`)) return;
-        deletePersonalDeck(deck.id);
+        await deletePersonalDeck(deck.id);
         showToast(`Đã xoá deck "${deck.name}"`);
         renderDeckGrid();
       });
@@ -720,10 +776,12 @@ function renderDeckGrid() {
     grid.appendChild(tile);
   });
 
-  const addTile = document.createElement("div");
-  addTile.className = "deck-tile deck-tile-add";
-  addTile.innerHTML = `<div class="deck-tile-add-icon">+</div><div>Deck mới ở form trên</div>`;
-  grid.appendChild(addTile);
+  if (isLoggedIn) {
+    const addTile = document.createElement("div");
+    addTile.className = "deck-tile deck-tile-add";
+    addTile.innerHTML = `<div class="deck-tile-add-icon">+</div><div>Deck mới ở form trên</div>`;
+    grid.appendChild(addTile);
+  }
 }
 
 function selectDeckAndStudy(deckId) {
@@ -755,7 +813,7 @@ function resetCardForm() {
   document.getElementById("btnSaveCard").textContent = "Thêm thẻ";
 }
 
-function handleSaveCard() {
+async function handleSaveCard() {
   const kr = document.getElementById("cardFormKr").value.trim();
   const vi = document.getElementById("cardFormVi").value.trim();
   const romaja = document.getElementById("cardFormRomaja").value.trim();
@@ -768,15 +826,18 @@ function handleSaveCard() {
   }
 
   const cardData = { kr, vi, romaja, example, exampleVi };
+  const saveBtn = document.getElementById("btnSaveCard");
+  saveBtn.disabled = true;
 
   if (editingCardId !== null) {
-    updateCardInDeck(editingDeckId, editingCardId, cardData);
+    await updateCardInDeck(editingDeckId, editingCardId, cardData);
     showToast("✓ Đã cập nhật thẻ");
   } else {
-    addCardToDeck(editingDeckId, cardData);
+    await addCardToDeck(editingDeckId, cardData);
     showToast("✓ Đã thêm thẻ mới");
   }
 
+  saveBtn.disabled = false;
   resetCardForm();
   renderDeckCardList();
 }
@@ -822,9 +883,9 @@ function renderDeckCardList() {
     const deleteBtn = document.createElement("button");
     deleteBtn.className = "btn btn-tertiary btn-sm";
     deleteBtn.textContent = "Xoá";
-    deleteBtn.addEventListener("click", () => {
+    deleteBtn.addEventListener("click", async () => {
       if (!confirm(`Xoá thẻ "${card.kr}"?`)) return;
-      deleteCardFromDeck(editingDeckId, card.id);
+      await deleteCardFromDeck(editingDeckId, card.id);
       if (editingCardId === card.id) resetCardForm();
       renderDeckCardList();
     });
@@ -932,42 +993,68 @@ Nhận xét: <nhận xét ngắn gọn 2-3 câu bằng tiếng Việt, chỉ ra 
 }
 
 /* --------------------------------------------------------------------------
-   10. ĐĂNG NHẬP GOOGLE + ĐỒNG BỘ TIẾN ĐỘ VỚI GOOGLE APPS SCRIPT (GAS)
+   10. ĐĂNG NHẬP GOOGLE (FIREBASE AUTH) + ĐỒNG BỘ TIẾN ĐỘ VỚI GOOGLE APPS SCRIPT
+   Dùng Firebase Authentication để có phiên đăng nhập bền (tự làm mới ngầm,
+   không mất khi refresh trang) thay vì token gốc của Google Identity Services
+   (chỉ sống ~60 phút và không tự nhớ qua các lần tải lại trang).
    URL của Apps Script Web App dùng chung cho mọi người dùng (gắn cứng sẵn).
-   Chỉ khi người dùng đã đăng nhập Google thì tiến độ mới được gửi lên,
-   kèm theo idToken để phía Apps Script xác thực danh tính trước khi ghi Sheet.
    -------------------------------------------------------------------------- */
 const GAS_URL = "https://script.google.com/macros/s/AKfycbwzFDh1tW2SziRMPZVO6a2VXwx0qQEvPETuSi3GUJI6w9eiIAWOyScDKtDebYrcUAE0/exec";
 
-let currentGoogleIdToken = null;
-let currentGoogleUser = null; // { email, name }
+const firebaseConfig = {
+  apiKey: "AIzaSyDW_XugXe6yA2WdPd4hzVNuSGttJyK62og",
+  authDomain: "korean-duocards.firebaseapp.com",
+  projectId: "korean-duocards",
+  storageBucket: "korean-duocards.firebasestorage.app",
+  messagingSenderId: "454230080460",
+  appId: "1:454230080460:web:81a31ee0c5b105dc37fb69"
+};
+firebase.initializeApp(firebaseConfig);
+const firebaseAuth = firebase.auth();
 
-function decodeJwtPayload(jwt) {
-  const base64Url = jwt.split(".")[1];
-  const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-  return JSON.parse(decodeURIComponent(escape(atob(base64))));
-}
+let currentGoogleUser = null; // { email, name } — cập nhật qua onAuthStateChanged
 
-function handleGoogleCredentialResponse(response) {
-  currentGoogleIdToken = response.credential;
-  const payload = decodeJwtPayload(response.credential);
-  currentGoogleUser = { email: payload.email, name: payload.name || payload.email };
-  showToast(`✓ Đã đăng nhập Google: ${currentGoogleUser.name}`);
-  updateGoogleSyncUI();
+function signInWithGoogle() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  firebaseAuth.signInWithPopup(provider).catch(err => {
+    console.error("Lỗi đăng nhập Google:", err);
+    showToast("⚠️ Đăng nhập thất bại: " + err.message);
+  });
 }
-window.handleGoogleCredentialResponse = handleGoogleCredentialResponse;
 
 function signOutGoogle() {
-  currentGoogleIdToken = null;
-  currentGoogleUser = null;
-  if (window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
-  showToast("Đã đăng xuất Google");
-  updateGoogleSyncUI();
+  firebaseAuth.signOut();
 }
+
+firebaseAuth.onAuthStateChanged(async user => {
+  currentGoogleUser = user ? { email: user.email, name: user.displayName || user.email } : null;
+  if (user) showToast(`✓ Đã đăng nhập Google: ${currentGoogleUser.name}`);
+  updateGoogleSyncUI();
+
+  // Đăng xuất -> quay về Basic Deck nếu đang học deck cá nhân, vì deck cá nhân
+  // chỉ tồn tại gắn theo tài khoản đã đăng nhập.
+  if (!user) {
+    personalDecks = [];
+    if (activeDeckId !== BASIC_DECK_ID) {
+      activeDeckId = BASIC_DECK_ID;
+      saveActiveDeckId(activeDeckId);
+    }
+  }
+
+  if (currentTab === "library") {
+    await fetchPersonalDecks();
+    renderDeckGrid();
+  } else {
+    decksLoaded = false; // tải lại khi mở tab Thư viện lần tới
+  }
+
+  if (currentTab === "flashcard") refreshFlashQueue();
+  else if (currentTab === "cloze") refreshClozeQueue();
+});
 
 function updateGoogleSyncUI() {
   const statusText = document.getElementById("gsyncStatusText");
-  const signInBtn = document.getElementById("googleSignInButton");
+  const signInBtn = document.getElementById("btnGoogleSignIn");
   const signOutBtn = document.getElementById("btnGoogleSignOut");
 
   if (currentGoogleUser) {
@@ -976,18 +1063,22 @@ function updateGoogleSyncUI() {
     signOutBtn.style.display = "inline-flex";
   } else {
     statusText.textContent = "Đăng nhập Google để tự động lưu tiến độ học (đã nhớ/chưa nhớ) lên hệ thống chung.";
-    signInBtn.style.display = "block";
+    signInBtn.style.display = "inline-flex";
     signOutBtn.style.display = "none";
   }
 }
 
 async function sendProgressToGAS(vocabId, action, value) {
   if (GAS_URL.startsWith("REPLACE_WITH_")) return; // Chưa cấu hình URL GAS -> bỏ qua
-  if (!currentGoogleIdToken) return; // Chưa đăng nhập Google -> chỉ lưu local, không đồng bộ
+  const user = firebaseAuth.currentUser;
+  if (!user) return; // Chưa đăng nhập Google -> chỉ lưu local, không đồng bộ
+
+  // getIdToken() tự trả token còn hạn dùng, hoặc tự làm mới ngầm nếu đã hết hạn.
+  const idToken = await user.getIdToken();
 
   const payload = {
     mode: "progress",
-    idToken: currentGoogleIdToken,
+    idToken,
     vocabId,
     action,     // "remember" | "forget" | "ai_grading"
     value,      // level SRS hoặc điểm AI
