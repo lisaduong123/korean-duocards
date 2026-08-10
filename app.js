@@ -665,6 +665,7 @@ function initLookupTab() {
   });
 
   // Đồng bộ Google (Sign-In)
+  document.getElementById("btnGoogleSignIn").addEventListener("click", signInWithGoogle);
   document.getElementById("btnGoogleSignOut").addEventListener("click", signOutGoogle);
   updateGoogleSyncUI();
 
