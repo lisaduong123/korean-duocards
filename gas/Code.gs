@@ -512,28 +512,50 @@ function handleProgressSync(payload) {
 // PHẦN 6: API — DECK CÁ NHÂN (lưu trên sheet "Decks Cá Nhân", gắn theo email đã xác thực)
 // Sheet dạng bảng phẳng, mỗi dòng là 1 thẻ; riêng deck rỗng có 1 "dòng đánh dấu"
 // (CardID để trống) để deck vẫn tồn tại dù chưa có thẻ nào.
-// Cột: Email | DeckID | Tên Deck | CardID | Hàn | Romaja | Việt | Ví Dụ | Ví Dụ Việt
+// Cột: Email | DeckID | Tên Deck | CardID | Hàn | Romaja | Việt | Ví Dụ (JSON)
+// Cột "Ví Dụ (JSON)" chứa mảng JSON tối đa 5 câu ví dụ: [{"example":"...","exampleVi":"..."}]
+// — dùng JSON trong 1 cột thay vì cố định 10 cột riêng, vì số câu ví dụ mỗi thẻ là tuỳ chọn (0-5).
 // ================================================================================
+const DECKS_HEADER = ["Email", "DeckID", "Tên Deck", "CardID", "Hàn", "Romaja", "Việt", "Ví Dụ (JSON)"];
+
 function getOrCreateDecksSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(SHEET_DECKS);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_DECKS);
-    sheet.appendRow(["Email", "DeckID", "Tên Deck", "CardID", "Hàn", "Romaja", "Việt", "Ví Dụ", "Ví Dụ Việt"]);
-  }
+  if (!sheet) sheet = ss.insertSheet(SHEET_DECKS);
+  sheet.getRange(1, 1, 1, DECKS_HEADER.length).setValues([DECKS_HEADER]);
   return sheet;
+}
+
+/** Parse cột "Ví Dụ (JSON)" thành mảng {example, exampleVi}; trả về [] nếu trống/hỏng. */
+function parseExamplesJson(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    return [];
+  }
 }
 
 /** Đọc toàn bộ dòng (trừ header) của sheet Decks Cá Nhân thành mảng object. */
 function readDeckRows(sheet) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
-  const values = sheet.getRange(2, 1, lastRow - 1, 9).getValues();
+  const values = sheet.getRange(2, 1, lastRow - 1, DECKS_HEADER.length).getValues();
   return values.map((row, i) => ({
     rowIndex: i + 2, // vị trí dòng thật trên sheet (1-based, có header)
     email: row[0], deckId: row[1], deckName: row[2], cardId: row[3],
-    kr: row[4], romaja: row[5], vi: row[6], example: row[7], exampleVi: row[8]
+    kr: row[4], romaja: row[5], vi: row[6], examples: parseExamplesJson(row[7])
   }));
+}
+
+/** Chuẩn hoá + giới hạn tối đa 5 câu ví dụ hợp lệ (bỏ câu rỗng) từ payload.examples. */
+function sanitizeExamples(examples) {
+  if (!Array.isArray(examples)) return [];
+  return examples
+    .map(e => ({ example: CLEAN(e && e.example), exampleVi: CLEAN(e && e.exampleVi) }))
+    .filter(e => e.example)
+    .slice(0, 5);
 }
 
 function handleListDecks(payload) {
@@ -546,7 +568,7 @@ function handleListDecks(payload) {
     if (!decksById[r.deckId]) decksById[r.deckId] = { id: r.deckId, name: r.deckName, cards: [] };
     if (r.cardId) {
       decksById[r.deckId].cards.push({
-        id: r.cardId, kr: r.kr, romaja: r.romaja, vi: r.vi, example: r.example, exampleVi: r.exampleVi
+        id: r.cardId, kr: r.kr, romaja: r.romaja, vi: r.vi, examples: r.examples
       });
     }
   });
@@ -562,7 +584,7 @@ function handleCreateDeck(payload) {
   if (!deckName) return jsonResponse({ success: false, error: "Thiếu tên deck." });
 
   const deckId = Utilities.getUuid();
-  getOrCreateDecksSheet().appendRow([user.email, deckId, deckName, "", "", "", "", "", ""]);
+  getOrCreateDecksSheet().appendRow([user.email, deckId, deckName, "", "", "", "", ""]);
 
   return jsonResponse({ success: true, deckId, name: deckName });
 }
@@ -595,7 +617,7 @@ function handleAddCard(payload) {
   const cardId = Utilities.getUuid();
   getOrCreateDecksSheet().appendRow([
     user.email, payload.deckId, CLEAN(payload.deckName), cardId,
-    kr, CLEAN(payload.romaja), vi, CLEAN(payload.example), CLEAN(payload.exampleVi)
+    kr, CLEAN(payload.romaja), vi, JSON.stringify(sanitizeExamples(payload.examples))
   ]);
 
   return jsonResponse({ success: true, cardId });
@@ -611,8 +633,8 @@ function handleUpdateCard(payload) {
   );
   if (!row) return jsonResponse({ success: false, error: "Không tìm thấy thẻ." });
 
-  sheet.getRange(row.rowIndex, 5, 1, 5).setValues([[
-    CLEAN(payload.kr), CLEAN(payload.romaja), CLEAN(payload.vi), CLEAN(payload.example), CLEAN(payload.exampleVi)
+  sheet.getRange(row.rowIndex, 5, 1, 4).setValues([[
+    CLEAN(payload.kr), CLEAN(payload.romaja), CLEAN(payload.vi), JSON.stringify(sanitizeExamples(payload.examples))
   ]]);
 
   return jsonResponse({ success: true });

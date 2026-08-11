@@ -14,6 +14,7 @@
 - **AI chấm điểm bản dịch:** dán Gemini API Key của riêng bạn để AI chấm điểm bản dịch Hàn → Việt. Key chỉ lưu trong `localStorage` của trình duyệt người dùng đó, ai dùng key của người ấy — không lộ, không dùng chung.
 - **Đăng nhập Google (Firebase Auth) & đồng bộ tiến độ chung:** đăng nhập bằng Google — phiên đăng nhập bền, tự làm mới ngầm, không mất khi refresh trang — để tự động lưu tiến độ học (đã nhớ/chưa nhớ) lên 1 Google Sheet dùng chung, thông qua Google Apps Script Web App (`gas/Code.gs`).
 - **Thư viện (Library) & Deck cá nhân:** tab "Thư viện" cho xem tất cả deck — **Basic Deck** (20 từ có sẵn, chỉ xem/học, không sửa) và **deck cá nhân tự tạo** (bấm "+" để tạo deck mới, tự thêm/sửa/xoá flashcard). Deck cá nhân lưu trên Google Sheet, gắn theo tài khoản Google đã đăng nhập — cần đăng nhập mới tạo/quản lý được. Deck đang chọn sẽ là deck được dùng ở tab Flashcard, Điền từ và Tra cứu.
+- **AI hỗ trợ tạo thẻ trong deck cá nhân:** gõ từ tiếng Hàn xong ngừng gõ ~1 giây, AI tự điền phiên âm + nghĩa tiếng Việt (dùng chung Gemini API Key đã lưu). Mỗi thẻ có tối đa **5 slot câu ví dụ** độc lập — mỗi slot có nút "✨ Tạo câu bằng AI" riêng, bấm khi nào cần thì mới gọi AI (không tự sinh cả 5 câu để tránh tốn token), có thể sửa tay sau khi AI tạo, và không bắt buộc điền đủ 5.
 
 ## 2. Cấu trúc project
 
@@ -150,7 +151,10 @@ Bảng phẳng, mỗi dòng là 1 thẻ; riêng deck rỗng có 1 "dòng đánh 
 | Email | Chủ sở hữu deck/thẻ (giải mã từ Firebase ID token). |
 | DeckID / CardID | UUID sinh tự động phía server (`Utilities.getUuid()`), không trùng lặp giữa các người dùng. |
 | Tên Deck | Tên deck do người dùng đặt. |
-| Hàn / Romaja / Việt / Ví Dụ / Ví Dụ Việt | Nội dung flashcard, tương ứng các trường `kr/romaja/vi/example/exampleVi` trong `VOCAB_DATA`. |
+| Hàn / Romaja / Việt | Nội dung cơ bản của thẻ, tương ứng các trường `kr/romaja/vi` trong `VOCAB_DATA`. |
+| Ví Dụ (JSON) | Mảng JSON tối đa 5 câu ví dụ dạng `[{"example":"...","exampleVi":"..."}]`. Dùng JSON trong 1 cột thay vì 10 cột cố định vì số câu ví dụ mỗi thẻ là tuỳ chọn (0–5, xem mục 1 "AI hỗ trợ tạo thẻ"). |
+
+**Lịch sử schema:** ban đầu cột này tách riêng `Ví Dụ` / `Ví Dụ Việt` (1 câu ví dụ/thẻ). Khi nâng lên tối đa 5 câu, đã gộp thành 1 cột JSON và chạy 1 lần hàm migrate tạm (đọc dữ liệu cũ ở 2 cột, ghi lại đúng định dạng JSON mới, sau đó xoá hàm migrate) để không mất dữ liệu thẻ đã tạo trước đó.
 
 ## 7. Lưu ý bảo mật
 

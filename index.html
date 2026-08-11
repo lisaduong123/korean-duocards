@@ -233,6 +233,7 @@
                 <h3 class="block-title" style="font-size:15px;">✏️ Thêm / sửa thẻ</h3>
                 <label class="field-label">Từ tiếng Hàn *</label>
                 <input type="text" id="cardFormKr" class="input-field" placeholder="예: 안녕하세요">
+                <p class="hint-text" id="cardFormAiStatus">Ngừng gõ 1 chút, AI sẽ tự điền phiên âm + nghĩa tiếng Việt (cần đã lưu Gemini API Key ở trên).</p>
 
                 <label class="field-label mt">Phiên âm (romaja)</label>
                 <input type="text" id="cardFormRomaja" class="input-field" placeholder="annyeonghaseyo">
@@ -240,14 +241,13 @@
                 <label class="field-label mt">Nghĩa tiếng Việt *</label>
                 <input type="text" id="cardFormVi" class="input-field" placeholder="Xin chào">
 
-                <label class="field-label mt">Câu ví dụ (tuỳ chọn, dùng cho tab Điền từ)</label>
-                <input type="text" id="cardFormExample" class="input-field" placeholder="안녕하세요, 만나서 반갑습니다.">
-
-                <label class="field-label mt">Dịch câu ví dụ</label>
-                <input type="text" id="cardFormExampleVi" class="input-field" placeholder="Xin chào, rất vui được gặp bạn.">
+                <label class="field-label mt">Câu ví dụ (tối đa 5, không bắt buộc)</label>
+                <div id="exampleSlotsContainer">
+                  <!-- injected by JS: 5 slot, mỗi slot có nút "Tạo câu" bằng AI -->
+                </div>
 
                 <button class="btn btn-primary btn-block mt" id="btnSaveCard">Thêm thẻ</button>
-                <p class="hint-text">Câu ví dụ nên chứa đúng từ tiếng Hàn ở trên để tab "Điền từ" có thể tạo chỗ trống chính xác.</p>
+                <p class="hint-text">Mỗi câu ví dụ đã điền sẽ trở thành 1 câu hỏi riêng ở tab "Điền từ".</p>
               </div>
             </div>
           </div>

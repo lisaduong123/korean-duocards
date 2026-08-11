@@ -766,16 +766,92 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  background: var(--color-bg-alt);
+  gap: 14px;
+  background: #fff;
+  border: 1.5px solid var(--color-border);
   border-radius: var(--radius-sm);
-  padding: 12px 16px;
-  gap: 10px;
+  padding: 14px 16px;
+}
+
+.deck-card-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.deck-card-item-kr-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.deck-card-item-kr {
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--color-text);
+}
+
+.deck-card-item-romaja {
+  font-size: 12px;
+  color: var(--color-text-soft);
+  font-style: italic;
+}
+
+.deck-card-item-vi {
+  font-size: 14px;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.deck-card-item-example-count {
+  font-size: 11.5px;
+  color: var(--color-text-soft);
 }
 
 .deck-card-item-actions {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ---------------------------------- FORM THẺ: SLOT CÂU VÍ DỤ ---------------------------------- */
+#exampleSlotsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.example-slot {
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--color-bg-alt);
+}
+
+.example-slot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.example-slot-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--color-text-soft);
+}
+
+.example-slot textarea {
+  margin-bottom: 6px;
+  resize: vertical;
+}
+
+.example-slot textarea:last-of-type {
+  margin-bottom: 0;
 }
 
 /* AI Result */
@@ -864,6 +940,15 @@ body {
 @media (max-width: 860px) {
   .panel-lookup-grid {
     grid-template-columns: 1fr;
+  }
+
+  .deck-card-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .deck-card-item-actions {
+    justify-content: flex-end;
   }
 }
 

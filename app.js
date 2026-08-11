@@ -92,6 +92,17 @@ function getActiveDeckCards() {
   return getActiveDeck().cards;
 }
 
+/**
+ * Chuẩn hoá câu ví dụ của 1 thẻ về dạng mảng [{example, exampleVi}], bất kể thẻ là:
+ *  - Basic Deck (VOCAB_DATA): 1 câu ví dụ duy nhất ở dạng field đơn `example`/`exampleVi`.
+ *  - Deck cá nhân: tối đa 5 câu ví dụ ở dạng mảng `examples`.
+ */
+function getCardExamples(card) {
+  if (Array.isArray(card.examples)) return card.examples;
+  if (card.example) return [{ example: card.example, exampleVi: card.exampleVi }];
+  return [];
+}
+
 /** Gọi Google Apps Script và đọc JSON trả về (khác sendProgressToGAS: cần đọc kết quả nên không dùng no-cors). */
 async function callGAS(payload) {
   const response = await fetch(GAS_URL, {
@@ -164,10 +175,11 @@ async function addCardToDeck(deckId, cardData) {
   if (!deck) return null;
 
   const idToken = await user.getIdToken();
+  const examples = cardData.examples || [];
   const result = await callGAS({
     mode: "addCard", idToken, deckId, deckName: deck.name,
     kr: cardData.kr, romaja: cardData.romaja || "", vi: cardData.vi,
-    example: cardData.example || "", exampleVi: cardData.exampleVi || ""
+    examples
   });
   if (!result.success) {
     showToast("⚠️ Không thêm được thẻ: " + (result.error || "Lỗi không rõ"));
@@ -176,7 +188,7 @@ async function addCardToDeck(deckId, cardData) {
 
   const card = {
     id: result.cardId, kr: cardData.kr, romaja: cardData.romaja || "", vi: cardData.vi,
-    example: cardData.example || "", exampleVi: cardData.exampleVi || "", blankWord: cardData.kr
+    examples
   };
   deck.cards.push(card);
   return card;
@@ -190,10 +202,11 @@ async function updateCardInDeck(deckId, cardId, cardData) {
   if (!card) return;
 
   const idToken = await user.getIdToken();
+  const examples = cardData.examples || [];
   const result = await callGAS({
     mode: "updateCard", idToken, deckId, cardId,
     kr: cardData.kr, romaja: cardData.romaja || "", vi: cardData.vi,
-    example: cardData.example || "", exampleVi: cardData.exampleVi || ""
+    examples
   });
   if (!result.success) {
     showToast("⚠️ Không cập nhật được thẻ: " + (result.error || "Lỗi không rõ"));
@@ -203,9 +216,7 @@ async function updateCardInDeck(deckId, cardId, cardData) {
   card.kr = cardData.kr;
   card.romaja = cardData.romaja || "";
   card.vi = cardData.vi;
-  card.example = cardData.example || "";
-  card.exampleVi = cardData.exampleVi || "";
-  card.blankWord = cardData.kr;
+  card.examples = examples;
 }
 
 async function deleteCardFromDeck(deckId, cardId) {
@@ -445,7 +456,10 @@ function renderFlashcard() {
   document.getElementById("cardKr").textContent = card.kr;
   document.getElementById("cardRomaja").textContent = card.romaja;
   document.getElementById("cardVi").textContent = card.vi;
-  document.getElementById("cardExample").textContent = `"${card.example}"`;
+  const firstExample = getCardExamples(card)[0];
+  const exampleEl = document.getElementById("cardExample");
+  exampleEl.textContent = firstExample ? `"${firstExample.example}"` : "";
+  exampleEl.style.display = firstExample ? "block" : "none";
 
   const levelBadge = document.getElementById("cardLevelBadge");
   if (state.reviews === 0) levelBadge.textContent = "Mới";
@@ -502,7 +516,14 @@ function initFlashcardTab() {
    -------------------------------------------------------------------------- */
 function refreshClozeQueue() {
   updateActiveDeckLabels();
-  clozeQueue = shuffleArray(getActiveDeckCards().filter(v => v.example && v.example.trim()));
+  // Mỗi câu ví dụ của mỗi thẻ trở thành 1 câu hỏi riêng — thẻ có nhiều câu ví dụ
+  // (deck cá nhân, tối đa 5) sẽ xuất hiện nhiều lần với câu khác nhau.
+  const items = getActiveDeckCards().flatMap(card =>
+    getCardExamples(card)
+      .filter(ex => ex.example && ex.example.trim())
+      .map(ex => ({ cardId: card.id, kr: card.kr, example: ex.example, exampleVi: ex.exampleVi, blankWord: card.kr }))
+  );
+  clozeQueue = shuffleArray(items);
   clozeIndex = 0;
   clozeAnswered = false;
   renderClozeQuestion();
@@ -510,7 +531,7 @@ function refreshClozeQueue() {
 
 function buildClozeOptions(correctWord) {
   const distractors = shuffleArray(
-    getActiveDeckCards().filter(v => v.blankWord !== correctWord).map(v => v.blankWord)
+    getActiveDeckCards().map(v => v.kr).filter(kr => kr !== correctWord)
   ).slice(0, 3);
   return shuffleArray([correctWord, ...distractors]);
 }
@@ -679,9 +700,17 @@ function initLookupTab() {
 
 let currentSampleSentence = null;
 
+function flattenExamplesForCards(cards) {
+  return cards.flatMap(card =>
+    getCardExamples(card)
+      .filter(ex => ex.example && ex.example.trim())
+      .map(ex => ({ id: card.id, example: ex.example, exampleVi: ex.exampleVi }))
+  );
+}
+
 function pickRandomSampleSentence() {
-  let pool = getActiveDeckCards().filter(v => v.example && v.example.trim());
-  if (pool.length === 0) pool = VOCAB_DATA;
+  let pool = flattenExamplesForCards(getActiveDeckCards());
+  if (pool.length === 0) pool = flattenExamplesForCards(VOCAB_DATA);
   const randomItem = pool[Math.floor(Math.random() * pool.length)];
   currentSampleSentence = randomItem;
   document.getElementById("sampleSentenceBox").textContent = randomItem.example;
@@ -712,6 +741,8 @@ function initLibraryTab() {
   document.getElementById("btnBackToDecks").addEventListener("click", showDeckListView);
 
   document.getElementById("btnSaveCard").addEventListener("click", handleSaveCard);
+
+  setupAiAutoFill();
 }
 
 async function showDeckListView() {
@@ -806,27 +837,124 @@ function openDeckDetail(deckId) {
 
 function resetCardForm() {
   editingCardId = null;
+  lastAiFilledKr = "";
   document.getElementById("cardFormKr").value = "";
   document.getElementById("cardFormRomaja").value = "";
   document.getElementById("cardFormVi").value = "";
-  document.getElementById("cardFormExample").value = "";
-  document.getElementById("cardFormExampleVi").value = "";
+  document.getElementById("cardFormAiStatus").textContent = "Ngừng gõ 1 chút, AI sẽ tự điền phiên âm + nghĩa tiếng Việt (cần đã lưu Gemini API Key ở trên).";
+  renderExampleSlots([]);
   document.getElementById("btnSaveCard").textContent = "Thêm thẻ";
+}
+
+/* --------------------------------------------------------------------------
+   8c. AI HỖ TRỢ TẠO THẺ: tự điền phiên âm/nghĩa khi ngừng gõ từ Hàn,
+   và tạo câu ví dụ theo từng slot khi bấm nút (tối đa 5 slot/thẻ).
+   -------------------------------------------------------------------------- */
+const MAX_EXAMPLES_PER_CARD = 5;
+let aiFillDebounceTimer = null;
+let lastAiFilledKr = "";
+
+function setupAiAutoFill() {
+  document.getElementById("cardFormKr").addEventListener("input", () => {
+    clearTimeout(aiFillDebounceTimer);
+    aiFillDebounceTimer = setTimeout(triggerAiAutoFill, 900);
+  });
+}
+
+async function triggerAiAutoFill() {
+  const kr = document.getElementById("cardFormKr").value.trim();
+  const statusEl = document.getElementById("cardFormAiStatus");
+  if (!kr || kr === lastAiFilledKr) return;
+
+  const apiKey = localStorage.getItem("koreanApp_geminiKey");
+  if (!apiKey) return; // im lặng bỏ qua nếu chưa có key, hint text đã giải thích sẵn
+
+  lastAiFilledKr = kr;
+  statusEl.textContent = "🤖 AI đang điền phiên âm + nghĩa...";
+  try {
+    const info = await aiFillWordInfo(apiKey, kr);
+    if (document.getElementById("cardFormKr").value.trim() !== kr) return; // từ đã đổi trong lúc chờ
+    if (info.romaja) document.getElementById("cardFormRomaja").value = info.romaja;
+    if (info.vi) document.getElementById("cardFormVi").value = info.vi;
+    statusEl.textContent = "✓ AI đã điền — bạn có thể sửa lại nếu cần.";
+  } catch (err) {
+    statusEl.textContent = "⚠️ AI điền thất bại: " + err.message;
+  }
+}
+
+function renderExampleSlots(existingExamples) {
+  const container = document.getElementById("exampleSlotsContainer");
+  container.innerHTML = "";
+
+  for (let i = 0; i < MAX_EXAMPLES_PER_CARD; i++) {
+    const existing = existingExamples[i] || { example: "", exampleVi: "" };
+    const slot = document.createElement("div");
+    slot.className = "example-slot";
+    slot.innerHTML = `
+      <div class="example-slot-header">
+        <span class="example-slot-label">Câu ví dụ ${i + 1}</span>
+        <button type="button" class="btn btn-secondary btn-sm example-generate-btn">✨ Tạo câu bằng AI</button>
+      </div>
+      <textarea class="input-field example-kr-input" rows="2" placeholder="Câu tiếng Hàn..."></textarea>
+      <textarea class="input-field example-vi-input" rows="2" placeholder="Dịch tiếng Việt..."></textarea>
+    `;
+
+    slot.querySelector(".example-kr-input").value = existing.example;
+    slot.querySelector(".example-vi-input").value = existing.exampleVi;
+
+    const genBtn = slot.querySelector(".example-generate-btn");
+    genBtn.addEventListener("click", async () => {
+      const kr = document.getElementById("cardFormKr").value.trim();
+      if (!kr) {
+        showToast("⚠️ Nhập từ tiếng Hàn trước khi tạo câu ví dụ");
+        return;
+      }
+      const apiKey = localStorage.getItem("koreanApp_geminiKey");
+      if (!apiKey) {
+        showToast("⚠️ Vui lòng lưu Gemini API Key ở tab Tra cứu & AI trước");
+        return;
+      }
+
+      genBtn.disabled = true;
+      genBtn.textContent = "Đang tạo...";
+      try {
+        const result = await aiGenerateExampleSentence(apiKey, kr);
+        slot.querySelector(".example-kr-input").value = result.example;
+        slot.querySelector(".example-vi-input").value = result.exampleVi;
+      } catch (err) {
+        showToast("⚠️ Lỗi tạo câu ví dụ: " + err.message);
+      } finally {
+        genBtn.disabled = false;
+        genBtn.textContent = "✨ Tạo câu bằng AI";
+      }
+    });
+
+    container.appendChild(slot);
+  }
+}
+
+function collectExamplesFromForm() {
+  const examples = [];
+  document.querySelectorAll("#exampleSlotsContainer .example-slot").forEach(slot => {
+    const example = slot.querySelector(".example-kr-input").value.trim();
+    const exampleVi = slot.querySelector(".example-vi-input").value.trim();
+    if (example) examples.push({ example, exampleVi });
+  });
+  return examples;
 }
 
 async function handleSaveCard() {
   const kr = document.getElementById("cardFormKr").value.trim();
   const vi = document.getElementById("cardFormVi").value.trim();
   const romaja = document.getElementById("cardFormRomaja").value.trim();
-  const example = document.getElementById("cardFormExample").value.trim();
-  const exampleVi = document.getElementById("cardFormExampleVi").value.trim();
+  const examples = collectExamplesFromForm();
 
   if (!kr || !vi) {
     showToast("⚠️ Vui lòng nhập ít nhất Từ tiếng Hàn và Nghĩa tiếng Việt");
     return;
   }
 
-  const cardData = { kr, vi, romaja, example, exampleVi };
+  const cardData = { kr, vi, romaja, examples };
   const saveBtn = document.getElementById("btnSaveCard");
   saveBtn.disabled = true;
 
@@ -854,14 +982,18 @@ function renderDeckCardList() {
   }
 
   deck.cards.forEach(card => {
+    const exampleCount = getCardExamples(card).length;
     const item = document.createElement("div");
     item.className = "deck-card-item";
     item.innerHTML = `
-      <div>
-        <div class="vocab-item-kr">${card.kr}</div>
-        <div class="vocab-item-romaja">${card.romaja || ""}</div>
+      <div class="deck-card-item-main">
+        <div class="deck-card-item-kr-row">
+          <span class="deck-card-item-kr">${card.kr}</span>
+          ${card.romaja ? `<span class="deck-card-item-romaja">${card.romaja}</span>` : ""}
+        </div>
+        <div class="deck-card-item-vi">${card.vi}</div>
+        ${exampleCount > 0 ? `<div class="deck-card-item-example-count">📝 ${exampleCount} câu ví dụ</div>` : ""}
       </div>
-      <div class="vocab-item-vi">${card.vi}</div>
       <div class="deck-card-item-actions"></div>
     `;
 
@@ -872,11 +1004,12 @@ function renderDeckCardList() {
     editBtn.textContent = "Sửa";
     editBtn.addEventListener("click", () => {
       editingCardId = card.id;
+      lastAiFilledKr = card.kr; // tránh AI tự điền lại đè lên dữ liệu đã có khi mở sửa
       document.getElementById("cardFormKr").value = card.kr;
       document.getElementById("cardFormRomaja").value = card.romaja || "";
       document.getElementById("cardFormVi").value = card.vi;
-      document.getElementById("cardFormExample").value = card.example || "";
-      document.getElementById("cardFormExampleVi").value = card.exampleVi || "";
+      document.getElementById("cardFormAiStatus").textContent = "Sửa từ tiếng Hàn nếu muốn AI điền lại phiên âm/nghĩa.";
+      renderExampleSlots(getCardExamples(card));
       document.getElementById("btnSaveCard").textContent = "Cập nhật thẻ";
     });
     actionsEl.appendChild(editBtn);
@@ -956,8 +1089,6 @@ async function handleGradeTranslation() {
  * @returns {Promise<{score: number|null, text: string}>}
  */
 async function callGeminiGrading(apiKey, koreanSentence, userTranslation) {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(apiKey)}`;
-
   const prompt = `Bạn là giáo viên tiếng Hàn. Câu tiếng Hàn gốc là: "${koreanSentence}".
 Học viên đã dịch câu này sang tiếng Việt như sau: "${userTranslation}".
 
@@ -965,6 +1096,20 @@ Hãy chấm điểm bản dịch trên thang điểm từ 0 đến 10 dựa trê
 Trả lời CHÍNH XÁC theo định dạng sau, không thêm bất kỳ nội dung nào khác:
 Điểm: <số điểm>
 Nhận xét: <nhận xét ngắn gọn 2-3 câu bằng tiếng Việt, chỉ ra điểm đúng/sai và gợi ý cải thiện>`;
+
+  const rawText = await callGeminiText(apiKey, prompt);
+  const scoreMatch = rawText.match(/Điểm:\s*(\d+(\.\d+)?)/i);
+  const commentMatch = rawText.match(/Nhận xét:\s*([\s\S]*)/i);
+
+  return {
+    score: scoreMatch ? parseFloat(scoreMatch[1]) : null,
+    text: commentMatch ? commentMatch[1].trim() : rawText.trim()
+  };
+}
+
+/** Gọi Gemini API (generateContent), trả về text thô. Dùng chung cho mọi tính năng AI trong app. */
+async function callGeminiText(apiKey, prompt) {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   const response = await fetch(endpoint, {
     method: "POST",
@@ -980,16 +1125,47 @@ Nhận xét: <nhận xét ngắn gọn 2-3 câu bằng tiếng Việt, chỉ ra 
   }
 
   const data = await response.json();
-  const rawText =
-    data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text ||
     "Không nhận được phản hồi hợp lệ từ Gemini API.";
+}
 
-  const scoreMatch = rawText.match(/Điểm:\s*(\d+(\.\d+)?)/i);
-  const commentMatch = rawText.match(/Nhận xét:\s*([\s\S]*)/i);
+/**
+ * AI điền phiên âm (romaja) + nghĩa tiếng Việt cho 1 từ tiếng Hàn.
+ * @returns {Promise<{romaja: string, vi: string}>}
+ */
+async function aiFillWordInfo(apiKey, krWord) {
+  const prompt = `Từ tiếng Hàn: "${krWord}".
+Trả lời CHÍNH XÁC theo định dạng sau, không thêm nội dung nào khác:
+Phiên âm: <romaja của từ này>
+Nghĩa: <nghĩa tiếng Việt ngắn gọn, có thể ghi vài nghĩa cách nhau bằng dấu / nếu từ có nhiều nghĩa>`;
+
+  const rawText = await callGeminiText(apiKey, prompt);
+  const romajaMatch = rawText.match(/Phiên âm:\s*(.+)/i);
+  const meaningMatch = rawText.match(/Nghĩa:\s*([\s\S]*)/i);
 
   return {
-    score: scoreMatch ? parseFloat(scoreMatch[1]) : null,
-    text: commentMatch ? commentMatch[1].trim() : rawText.trim()
+    romaja: romajaMatch ? romajaMatch[1].trim() : "",
+    vi: meaningMatch ? meaningMatch[1].trim() : ""
+  };
+}
+
+/**
+ * AI tạo 1 câu ví dụ tiếng Hàn (kèm dịch tiếng Việt) có chứa từ đã cho.
+ * @returns {Promise<{example: string, exampleVi: string}>}
+ */
+async function aiGenerateExampleSentence(apiKey, krWord) {
+  const prompt = `Viết 1 câu ví dụ tiếng Hàn tự nhiên, đơn giản, có chứa đúng từ "${krWord}", kèm bản dịch tiếng Việt.
+Trả lời CHÍNH XÁC theo định dạng sau, không thêm nội dung nào khác:
+Câu: <câu tiếng Hàn>
+Dịch: <bản dịch tiếng Việt>`;
+
+  const rawText = await callGeminiText(apiKey, prompt);
+  const sentenceMatch = rawText.match(/Câu:\s*(.+)/i);
+  const translationMatch = rawText.match(/Dịch:\s*([\s\S]*)/i);
+
+  return {
+    example: sentenceMatch ? sentenceMatch[1].trim() : "",
+    exampleVi: translationMatch ? translationMatch[1].trim() : ""
   };
 }
 
