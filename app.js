@@ -741,6 +741,7 @@ function initLibraryTab() {
   document.getElementById("btnBackToDecks").addEventListener("click", showDeckListView);
 
   document.getElementById("btnSaveCard").addEventListener("click", handleSaveCard);
+  document.getElementById("btnGenerateAllExamples").addEventListener("click", handleGenerateAllExamples);
 
   setupAiAutoFill();
 }
@@ -893,7 +894,6 @@ function renderExampleSlots(existingExamples) {
     slot.innerHTML = `
       <div class="example-slot-header">
         <span class="example-slot-label">Câu ví dụ ${i + 1}</span>
-        <button type="button" class="btn btn-secondary btn-sm example-generate-btn">✨ Tạo câu bằng AI</button>
       </div>
       <textarea class="input-field example-kr-input" rows="2" placeholder="Câu tiếng Hàn..."></textarea>
       <textarea class="input-field example-vi-input" rows="2" placeholder="Dịch tiếng Việt..."></textarea>
@@ -902,34 +902,42 @@ function renderExampleSlots(existingExamples) {
     slot.querySelector(".example-kr-input").value = existing.example;
     slot.querySelector(".example-vi-input").value = existing.exampleVi;
 
-    const genBtn = slot.querySelector(".example-generate-btn");
-    genBtn.addEventListener("click", async () => {
-      const kr = document.getElementById("cardFormKr").value.trim();
-      if (!kr) {
-        showToast("⚠️ Nhập từ tiếng Hàn trước khi tạo câu ví dụ");
-        return;
-      }
-      const apiKey = localStorage.getItem("koreanApp_geminiKey");
-      if (!apiKey) {
-        showToast("⚠️ Vui lòng lưu Gemini API Key ở tab Tra cứu & AI trước");
-        return;
-      }
-
-      genBtn.disabled = true;
-      genBtn.textContent = "Đang tạo...";
-      try {
-        const result = await aiGenerateExampleSentence(apiKey, kr);
-        slot.querySelector(".example-kr-input").value = result.example;
-        slot.querySelector(".example-vi-input").value = result.exampleVi;
-      } catch (err) {
-        showToast("⚠️ Lỗi tạo câu ví dụ: " + err.message);
-      } finally {
-        genBtn.disabled = false;
-        genBtn.textContent = "✨ Tạo câu bằng AI";
-      }
-    });
-
     container.appendChild(slot);
+  }
+}
+
+async function handleGenerateAllExamples() {
+  const kr = document.getElementById("cardFormKr").value.trim();
+  if (!kr) {
+    showToast("⚠️ Nhập từ tiếng Hàn trước khi tạo câu ví dụ");
+    return;
+  }
+  const apiKey = localStorage.getItem("koreanApp_geminiKey");
+  if (!apiKey) {
+    showToast("⚠️ Vui lòng lưu Gemini API Key ở tab Tra cứu & AI trước");
+    return;
+  }
+
+  const genBtn = document.getElementById("btnGenerateAllExamples");
+  genBtn.disabled = true;
+  genBtn.textContent = "Đang tạo 5 câu...";
+  try {
+    const results = await aiGenerateExampleSentences(apiKey, kr, MAX_EXAMPLES_PER_CARD);
+    if (results.length === 0) {
+      showToast("⚠️ AI không trả về câu ví dụ hợp lệ, thử bấm lại");
+      return;
+    }
+    const slots = document.querySelectorAll("#exampleSlotsContainer .example-slot");
+    slots.forEach((slot, i) => {
+      slot.querySelector(".example-kr-input").value = results[i] ? results[i].example : "";
+      slot.querySelector(".example-vi-input").value = results[i] ? results[i].exampleVi : "";
+    });
+    showToast(`✓ Đã tạo ${results.length} câu ví dụ`);
+  } catch (err) {
+    showToast("⚠️ Lỗi tạo câu ví dụ: " + err.message);
+  } finally {
+    genBtn.disabled = false;
+    genBtn.textContent = "✨ Tạo 5 câu bằng AI";
   }
 }
 
@@ -1150,23 +1158,34 @@ Nghĩa: <nghĩa tiếng Việt ngắn gọn, có thể ghi vài nghĩa cách nha
 }
 
 /**
- * AI tạo 1 câu ví dụ tiếng Hàn (kèm dịch tiếng Việt) có chứa từ đã cho.
- * @returns {Promise<{example: string, exampleVi: string}>}
+ * AI tạo cùng lúc N câu ví dụ tiếng Hàn (kèm dịch tiếng Việt) có chứa từ đã cho.
+ * Gọi 1 lần duy nhất (không phải N lần riêng) để AI có ngữ cảnh tạo ra các câu
+ * thực sự khác chủ đề/độ dài nhau, tránh tình trạng mỗi câu sinh riêng lẻ lại
+ * xoay quanh cùng 1 chủ đề mặc định.
+ * @returns {Promise<Array<{example: string, exampleVi: string}>>}
  */
-async function aiGenerateExampleSentence(apiKey, krWord) {
-  const prompt = `Viết 1 câu ví dụ tiếng Hàn tự nhiên, đơn giản, có chứa đúng từ "${krWord}", kèm bản dịch tiếng Việt.
-Trả lời CHÍNH XÁC theo định dạng sau, không thêm nội dung nào khác:
-Câu: <câu tiếng Hàn>
-Dịch: <bản dịch tiếng Việt>`;
+async function aiGenerateExampleSentences(apiKey, krWord, count) {
+  const prompt = `Viết ${count} câu ví dụ tiếng Hàn khác nhau, mỗi câu đều có chứa đúng từ "${krWord}".
+Yêu cầu bắt buộc:
+- ${count} câu phải thuộc ${count} chủ đề/tình huống khác nhau (ví dụ: đời thường, công việc, học tập, du lịch, tình cảm, tin tức, trò chuyện bạn bè...) — không để 2 câu cùng chủ đề.
+- Độ dài đa dạng: có câu ngắn, có câu trung bình, có câu dài — không để các câu dài ngắn giống nhau.
+- Mỗi câu kèm bản dịch tiếng Việt tương ứng.
+
+Trả lời CHÍNH XÁC theo định dạng sau (đánh số từ 1 đến ${count}), không thêm nội dung nào khác:
+1. Câu: <câu tiếng Hàn>
+Dịch: <bản dịch tiếng Việt>
+2. Câu: <câu tiếng Hàn>
+Dịch: <bản dịch tiếng Việt>
+(tiếp tục đến hết ${count} câu theo đúng mẫu trên)`;
 
   const rawText = await callGeminiText(apiKey, prompt);
-  const sentenceMatch = rawText.match(/Câu:\s*(.+)/i);
-  const translationMatch = rawText.match(/Dịch:\s*([\s\S]*)/i);
-
-  return {
-    example: sentenceMatch ? sentenceMatch[1].trim() : "",
-    exampleVi: translationMatch ? translationMatch[1].trim() : ""
-  };
+  const results = [];
+  const blockRegex = /\d+\.\s*Câu:\s*(.+?)\s*[\r\n]+\s*Dịch:\s*(.+?)(?=[\r\n]+\s*\d+\.\s*Câu:|$)/gs;
+  let match;
+  while ((match = blockRegex.exec(rawText)) !== null) {
+    results.push({ example: match[1].trim(), exampleVi: match[2].trim() });
+  }
+  return results.slice(0, count);
 }
 
 /* --------------------------------------------------------------------------

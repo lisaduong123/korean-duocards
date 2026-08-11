@@ -817,6 +817,18 @@ body {
 }
 
 /* ---------------------------------- FORM THẺ: SLOT CÂU VÍ DỤ ---------------------------------- */
+.example-slots-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.example-slots-header .field-label {
+  margin: 0;
+}
+
 #exampleSlotsContainer {
   display: flex;
   flex-direction: column;

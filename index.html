@@ -241,9 +241,13 @@
                 <label class="field-label mt">Nghĩa tiếng Việt *</label>
                 <input type="text" id="cardFormVi" class="input-field" placeholder="Xin chào">
 
-                <label class="field-label mt">Câu ví dụ (tối đa 5, không bắt buộc)</label>
+                <div class="example-slots-header mt">
+                  <label class="field-label">Câu ví dụ (tối đa 5, không bắt buộc)</label>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btnGenerateAllExamples">✨ Tạo 5 câu bằng AI</button>
+                </div>
+                <p class="hint-text">AI sẽ tạo 1 lần cả 5 câu, mỗi câu thuộc chủ đề và độ dài khác nhau cho đa dạng. Bấm lại để tạo bộ câu mới, hoặc sửa tay từng câu.</p>
                 <div id="exampleSlotsContainer">
-                  <!-- injected by JS: 5 slot, mỗi slot có nút "Tạo câu" bằng AI -->
+                  <!-- injected by JS: 5 slot văn bản, điền bằng nút AI phía trên hoặc gõ tay -->
                 </div>
 
                 <button class="btn btn-primary btn-block mt" id="btnSaveCard">Thêm thẻ</button>
