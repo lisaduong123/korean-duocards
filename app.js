@@ -1289,9 +1289,14 @@ Nghĩa: <nghĩa tiếng Việt ngắn gọn, có thể ghi vài nghĩa cách nha
  * @returns {Promise<Array<{example: string, exampleVi: string, blankWord: string}>>}
  */
 async function aiGenerateExampleSentences(apiKey, krWord, count) {
+  const writtenCount = Math.round(count * 0.6); // vd count=5 -> 3 câu 문어체
+  const spokenCount = count - writtenCount;      //              -> 2 câu 구어체
+
   const prompt = `Viết ${count} câu ví dụ tiếng Hàn khác nhau, mỗi câu đều có chứa từ "${krWord}" (ở dạng đã chia phù hợp ngữ cảnh câu, không cần giữ nguyên dạng gốc).
 Yêu cầu bắt buộc:
 - ${count} câu phải thuộc ${count} chủ đề/tình huống khác nhau (ví dụ: đời thường, công việc, học tập, du lịch, tình cảm, tin tức, trò chuyện bạn bè...) — không để 2 câu cùng chủ đề.
+- Nội dung câu nên thiên về đời sống thường ngày và cách dùng thực tế (실무) mà người Hàn thực sự dùng trong công việc/cuộc sống hàng ngày — tránh câu mang tính học thuật, giáo trình, gượng gạo không tự nhiên.
+- Trong ${count} câu: khoảng ${writtenCount} câu viết theo văn phong **문어체** (trang trọng/văn viết, kết thúc bằng "-다") và ${spokenCount} câu theo văn phong **구어체** (khẩu ngữ/giao tiếp đời thường, dùng "-아요/어요", "-죠", "-네요"...) — để đa dạng cách diễn đạt.
 - Độ dài đa dạng: có câu ngắn, có câu trung bình, có câu dài — không để các câu dài ngắn giống nhau.
 - Mỗi câu kèm bản dịch tiếng Việt tương ứng.
 - Với mỗi câu, ghi rõ ĐÚNG NGUYÊN VĂN cụm chữ của từ "${krWord}" như nó xuất hiện trong câu đó (ví dụ nếu câu chia thành "회자되었습니다" thì ghi đúng "회자되었습니다", không ghi lại dạng gốc).
