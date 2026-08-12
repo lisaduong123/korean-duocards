@@ -751,8 +751,88 @@ function initLibraryTab() {
 
   document.getElementById("btnSaveCard").addEventListener("click", handleSaveCard);
   document.getElementById("btnGenerateAllExamples").addEventListener("click", handleGenerateAllExamples);
+  document.getElementById("btnRepairBlankWords").addEventListener("click", handleRepairBlankWords);
 
   setupAiAutoFill();
+}
+
+/**
+ * Quét toàn bộ deck cá nhân đang có, tìm câu ví dụ nào bị thiếu/sai `blankWord`
+ * (không tìm thấy đúng cụm chữ trong câu — ví dụ do được tạo trước khi field này
+ * tồn tại), dùng AI dò lại đúng dạng chữ đã xuất hiện trong câu đó rồi lưu lại.
+ * An toàn để chạy lại nhiều lần: câu đã có blankWord hợp lệ sẽ được bỏ qua.
+ * Đây là cơ chế chung để "vá" dữ liệu cũ mỗi khi cách lưu 1 field nào đó đổi,
+ * không cần người dùng vào từng thẻ sửa tay.
+ */
+async function handleRepairBlankWords() {
+  const apiKey = localStorage.getItem("koreanApp_geminiKey");
+  if (!apiKey) {
+    showToast("⚠️ Vui lòng lưu Gemini API Key ở tab Tra cứu & AI trước");
+    return;
+  }
+  if (!firebaseAuth.currentUser) {
+    showToast("⚠️ Cần đăng nhập Google trước");
+    return;
+  }
+
+  const btn = document.getElementById("btnRepairBlankWords");
+  const statusEl = document.getElementById("repairStatusText");
+  btn.disabled = true;
+
+  await fetchPersonalDecks(); // đảm bảo đang xét đúng dữ liệu mới nhất trên Sheet
+
+  let checked = 0, fixed = 0, failed = 0;
+
+  for (const deck of personalDecks) {
+    for (const card of deck.cards) {
+      const examples = getCardExamples(card);
+      let changed = false;
+
+      for (const ex of examples) {
+        if (!ex.example) continue;
+        if (ex.blankWord && ex.example.includes(ex.blankWord)) continue; // đã đúng, bỏ qua
+
+        checked++;
+        statusEl.textContent = `Đang kiểm tra... (${checked} câu, đã vá ${fixed})`;
+        try {
+          const detected = await detectBlankWordForExample(apiKey, card.kr, ex.example);
+          if (detected && ex.example.includes(detected)) {
+            ex.blankWord = detected;
+            changed = true;
+            fixed++;
+          } else {
+            failed++;
+          }
+        } catch (err) {
+          failed++;
+        }
+      }
+
+      if (changed) {
+        await updateCardInDeck(deck.id, card.id, { kr: card.kr, vi: card.vi, romaja: card.romaja, examples });
+      }
+    }
+  }
+
+  btn.disabled = false;
+  statusEl.textContent = checked === 0
+    ? "✓ Không có câu ví dụ nào cần vá — dữ liệu đã ổn."
+    : `✓ Đã kiểm tra ${checked} câu, vá được ${fixed}, không xác định được ${failed}.`;
+  renderDeckGrid();
+}
+
+/**
+ * AI xác định đúng cụm chữ mà 1 từ tiếng Hàn đã xuất hiện trong 1 câu CÓ SẴN
+ * (khác aiGenerateExampleSentences: không tạo câu mới, chỉ dò lại câu đã có).
+ * @returns {Promise<string>} chuỗi rỗng nếu AI không xác định được
+ */
+async function detectBlankWordForExample(apiKey, krWord, exampleSentence) {
+  const prompt = `Cho câu tiếng Hàn sau: "${exampleSentence}".
+Từ gốc (dạng từ điển) là "${krWord}". Từ này xuất hiện trong câu ở dạng chia nào?
+Trả lời CHÍNH XÁC đúng cụm chữ liên tục đã xuất hiện trong câu trên (copy nguyên văn từ câu, không thêm giải thích, không thêm dấu câu thừa).`;
+
+  const rawText = await callGeminiText(apiKey, prompt);
+  return rawText.trim();
 }
 
 async function showDeckListView() {

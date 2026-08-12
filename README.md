@@ -14,7 +14,8 @@
 - **AI chấm điểm bản dịch:** dán Gemini API Key của riêng bạn để AI chấm điểm bản dịch Hàn → Việt. Key chỉ lưu trong `localStorage` của trình duyệt người dùng đó, ai dùng key của người ấy — không lộ, không dùng chung.
 - **Đăng nhập Google (Firebase Auth) & đồng bộ tiến độ chung:** đăng nhập bằng Google — phiên đăng nhập bền, tự làm mới ngầm, không mất khi refresh trang — để tự động lưu tiến độ học (đã nhớ/chưa nhớ) lên 1 Google Sheet dùng chung, thông qua Google Apps Script Web App (`gas/Code.gs`).
 - **Thư viện (Library) & Deck cá nhân:** tab "Thư viện" cho xem tất cả deck — **Basic Deck** (20 từ có sẵn, chỉ xem/học, không sửa) và **deck cá nhân tự tạo** (bấm "+" để tạo deck mới, tự thêm/sửa/xoá flashcard). Deck cá nhân lưu trên Google Sheet, gắn theo tài khoản Google đã đăng nhập — cần đăng nhập mới tạo/quản lý được. Deck đang chọn sẽ là deck được dùng ở tab Flashcard, Điền từ và Tra cứu.
-- **AI hỗ trợ tạo thẻ trong deck cá nhân:** gõ từ tiếng Hàn xong ngừng gõ ~1 giây, AI tự điền phiên âm + nghĩa tiếng Việt (dùng chung Gemini API Key đã lưu). Mỗi thẻ có tối đa **5 slot câu ví dụ** độc lập — mỗi slot có nút "✨ Tạo câu bằng AI" riêng, bấm khi nào cần thì mới gọi AI (không tự sinh cả 5 câu để tránh tốn token), có thể sửa tay sau khi AI tạo, và không bắt buộc điền đủ 5.
+- **AI hỗ trợ tạo thẻ trong deck cá nhân:** gõ từ tiếng Hàn xong ngừng gõ ~1 giây, AI tự điền phiên âm + nghĩa tiếng Việt (dùng chung Gemini API Key đã lưu). Mỗi thẻ có tối đa **5 slot câu ví dụ** — bấm 1 nút **"✨ Tạo 5 câu bằng AI"** để sinh cả 5 câu cùng lúc (yêu cầu AI cho 5 chủ đề/độ dài khác nhau, tránh tình trạng sinh riêng lẻ ra 5 câu cùng 1 mô típ), không bắt buộc điền đủ, và có thể sửa tay từng câu sau khi AI tạo.
+- **Vá dữ liệu bằng AI:** nút "🔧 Quét & vá tất cả deck" ở tab Thư viện — quét toàn bộ deck cá nhân, tự dò lại bằng AI những câu ví dụ bị thiếu/sai dữ liệu (ví dụ do được tạo trước 1 bản cập nhật đổi cấu trúc lưu trữ) và lưu lại, không cần sửa tay từng thẻ. An toàn để bấm lại nhiều lần.
 
 ## 2. Cấu trúc project
 
@@ -152,9 +153,9 @@ Bảng phẳng, mỗi dòng là 1 thẻ; riêng deck rỗng có 1 "dòng đánh 
 | DeckID / CardID | UUID sinh tự động phía server (`Utilities.getUuid()`), không trùng lặp giữa các người dùng. |
 | Tên Deck | Tên deck do người dùng đặt. |
 | Hàn / Romaja / Việt | Nội dung cơ bản của thẻ, tương ứng các trường `kr/romaja/vi` trong `VOCAB_DATA`. |
-| Ví Dụ (JSON) | Mảng JSON tối đa 5 câu ví dụ dạng `[{"example":"...","exampleVi":"..."}]`. Dùng JSON trong 1 cột thay vì 10 cột cố định vì số câu ví dụ mỗi thẻ là tuỳ chọn (0–5, xem mục 1 "AI hỗ trợ tạo thẻ"). |
+| Ví Dụ (JSON) | Mảng JSON tối đa 5 câu ví dụ dạng `[{"example":"...","exampleVi":"...","blankWord":"..."}]`. Dùng JSON trong 1 cột thay vì cột cố định vì số câu ví dụ mỗi thẻ là tuỳ chọn (0–5, xem mục 1 "AI hỗ trợ tạo thẻ"). `blankWord` là đúng dạng chữ của từ **như nó xuất hiện trong câu đó** (không phải dạng từ điển) — xem mục 8b để hiểu vì sao cần tách riêng field này. |
 
-**Lịch sử schema:** ban đầu cột này tách riêng `Ví Dụ` / `Ví Dụ Việt` (1 câu ví dụ/thẻ). Khi nâng lên tối đa 5 câu, đã gộp thành 1 cột JSON và chạy 1 lần hàm migrate tạm (đọc dữ liệu cũ ở 2 cột, ghi lại đúng định dạng JSON mới, sau đó xoá hàm migrate) để không mất dữ liệu thẻ đã tạo trước đó.
+**Lịch sử schema:** ban đầu cột này tách riêng `Ví Dụ` / `Ví Dụ Việt` (1 câu ví dụ/thẻ, dùng chung `blankWord` = từ dạng từ điển của cả thẻ). Khi nâng lên tối đa 5 câu, đã gộp thành 1 cột JSON; sau đó phát hiện bug (mục 8b) nên thêm field `blankWord` riêng cho từng câu. Mỗi lần đổi cấu trúc như vậy đều chạy 1 lần hàm migrate tạm (đọc dữ liệu cũ, ghi lại đúng định dạng mới, sau đó xoá hàm migrate) để không mất dữ liệu thẻ đã tạo trước đó — xem mục 9 (`clasp`) cho quy trình.
 
 ## 7. Lưu ý bảo mật
 
@@ -173,6 +174,19 @@ Bảng phẳng, mỗi dòng là 1 thẻ; riêng deck rỗng có 1 "dòng đánh 
 Nếu sau này vẫn gặp lỗi `404` với thông báo kiểu "model ... is not found" hoặc "no longer available":
 1. Kiểm tra chắc chắn đang test qua link GitHub Pages thật (không phải mở file `index.html` trực tiếp) và đã hard-refresh (Ctrl+Shift+R) để loại trừ cache trình duyệt.
 2. Nếu vẫn lỗi, có thể alias `-latest` cũng đã bị đổi tên/ngừng hỗ trợ — vào `https://aistudio.google.com`, chọn "Get code" ở 1 model bất kỳ để xem tên model hiện tại Google đang đề xuất cho tài khoản của bạn, rồi cập nhật lại trong `app.js`.
+
+## 8b. Vì sao mỗi câu ví dụ cần `blankWord` riêng, và cách vá dữ liệu cũ
+
+**Bug đã gặp:** tab "Điền từ" tìm `kr` (dạng từ điển, ví dụ "회자되다") trong câu ví dụ để tạo chỗ trống. Nhưng tiếng Hàn chia động từ/tính từ theo ngữ cảnh — dạng từ điển hầu như không xuất hiện y nguyên trong câu tự nhiên (câu thật chứa "회자되었습니다", "회자될"...), nên phép so khớp chuỗi luôn thất bại, và Điền từ hiện cả câu mà không khuyết gì. Danh từ (không chia) như "선처"/"도배" không bị lỗi này vì tiểu từ chỉ nối thêm sau, không thay đổi phần đầu — nên bug chỉ lộ ra khi test đúng loại từ có chia (động từ/tính từ).
+
+**Cách sửa:** mỗi câu ví dụ giờ tự mang `blankWord` riêng (đúng dạng chữ xuất hiện trong CÂU ĐÓ), không dùng chung 1 từ gốc cho cả thẻ:
+- AI tạo câu (`aiGenerateExampleSentences`) được yêu cầu trả về luôn "từ trong câu" kèm mỗi câu, có tự kiểm tra khớp trước khi lưu.
+- Gõ tay thì có ô nhỏ "Từ cần khuyết trong câu này" ở mỗi slot, để trống sẽ mặc định dùng từ Hàn của thẻ.
+- `refreshClozeQueue` tự loại các câu mà `blankWord` không thực sự nằm trong câu (an toàn — bỏ qua câu lỗi thay vì hiện sai).
+
+**Vá dữ liệu cũ (đã tạo trước khi có `blankWord`):** nút **"🔧 Quét & vá tất cả deck"** ở tab Thư viện — quét toàn bộ deck cá nhân, với mỗi câu thiếu/sai `blankWord` thì gọi AI dò lại đúng dạng chữ đã dùng trong câu đó (`detectBlankWordForExample`, khác hàm tạo câu mới — chỉ *phân tích* câu có sẵn) rồi lưu lại qua API `updateCard` có sẵn. An toàn bấm lại nhiều lần vì câu đã đúng sẽ tự bỏ qua.
+
+Đây cũng là **cách chung để xử lý khi cấu trúc dữ liệu đổi mà dữ liệu cũ đã tồn tại nhiều**: viết 1 hàm quét + tự sửa ngay trong app (dùng lại API sẵn có), thay vì bắt người dùng sửa tay từng thẻ hoặc chạy migrate 1 lần rồi thôi. Nếu sau này phát sinh bug tương tự ở field khác, có thể làm theo đúng mẫu này.
 
 ## 9. Debug Google Apps Script bằng `clasp` (khi đồng bộ tiến độ không hoạt động)
 
