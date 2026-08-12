@@ -93,13 +93,15 @@ function getActiveDeckCards() {
 }
 
 /**
- * Chuẩn hoá câu ví dụ của 1 thẻ về dạng mảng [{example, exampleVi}], bất kể thẻ là:
- *  - Basic Deck (VOCAB_DATA): 1 câu ví dụ duy nhất ở dạng field đơn `example`/`exampleVi`.
- *  - Deck cá nhân: tối đa 5 câu ví dụ ở dạng mảng `examples`.
+ * Chuẩn hoá câu ví dụ của 1 thẻ về dạng mảng [{example, exampleVi, blankWord}], bất kể thẻ là:
+ *  - Basic Deck (VOCAB_DATA): 1 câu ví dụ duy nhất ở dạng field đơn `example`/`exampleVi`/`blankWord`.
+ *  - Deck cá nhân: tối đa 5 câu ví dụ ở dạng mảng `examples`, mỗi câu tự mang `blankWord` riêng
+ *    (vì tiếng Hàn chia động từ/tính từ theo ngữ cảnh — dạng gốc như "회자되다" hầu như không xuất
+ *    hiện y nguyên trong câu thật, mỗi câu có thể chia thành 1 dạng khác nhau).
  */
 function getCardExamples(card) {
   if (Array.isArray(card.examples)) return card.examples;
-  if (card.example) return [{ example: card.example, exampleVi: card.exampleVi }];
+  if (card.example) return [{ example: card.example, exampleVi: card.exampleVi, blankWord: card.blankWord }];
   return [];
 }
 
@@ -517,11 +519,13 @@ function initFlashcardTab() {
 function refreshClozeQueue() {
   updateActiveDeckLabels();
   // Mỗi câu ví dụ của mỗi thẻ trở thành 1 câu hỏi riêng — thẻ có nhiều câu ví dụ
-  // (deck cá nhân, tối đa 5) sẽ xuất hiện nhiều lần với câu khác nhau.
+  // (deck cá nhân, tối đa 5) sẽ xuất hiện nhiều lần với câu khác nhau. blankWord lấy
+  // theo TỪNG câu (không dùng chung từ gốc của thẻ) vì tiếng Hàn chia động từ/tính từ
+  // theo ngữ cảnh — mỗi câu có thể chứa 1 dạng chia khác nhau của cùng 1 từ.
   const items = getActiveDeckCards().flatMap(card =>
     getCardExamples(card)
-      .filter(ex => ex.example && ex.example.trim())
-      .map(ex => ({ cardId: card.id, kr: card.kr, example: ex.example, exampleVi: ex.exampleVi, blankWord: card.kr }))
+      .filter(ex => ex.example && ex.example.trim() && ex.blankWord && ex.example.includes(ex.blankWord))
+      .map(ex => ({ cardId: card.id, kr: card.kr, example: ex.example, exampleVi: ex.exampleVi, blankWord: ex.blankWord }))
   );
   clozeQueue = shuffleArray(items);
   clozeIndex = 0;
@@ -530,8 +534,13 @@ function refreshClozeQueue() {
 }
 
 function buildClozeOptions(correctWord) {
+  // Lấy toàn bộ blankWord đã thực sự dùng trong deck (không phải từ gốc) để đáp án
+  // nhiễu có "hình dạng" giống đáp án đúng (cùng là dạng đã chia, không lệch tông).
+  const allBlankWords = getActiveDeckCards().flatMap(card =>
+    getCardExamples(card).map(ex => ex.blankWord).filter(Boolean)
+  );
   const distractors = shuffleArray(
-    getActiveDeckCards().map(v => v.kr).filter(kr => kr !== correctWord)
+    [...new Set(allBlankWords)].filter(w => w !== correctWord)
   ).slice(0, 3);
   return shuffleArray([correctWord, ...distractors]);
 }
@@ -888,7 +897,7 @@ function renderExampleSlots(existingExamples) {
   container.innerHTML = "";
 
   for (let i = 0; i < MAX_EXAMPLES_PER_CARD; i++) {
-    const existing = existingExamples[i] || { example: "", exampleVi: "" };
+    const existing = existingExamples[i] || { example: "", exampleVi: "", blankWord: "" };
     const slot = document.createElement("div");
     slot.className = "example-slot";
     slot.innerHTML = `
@@ -896,10 +905,12 @@ function renderExampleSlots(existingExamples) {
         <span class="example-slot-label">Câu ví dụ ${i + 1}</span>
       </div>
       <textarea class="input-field example-kr-input" rows="2" placeholder="Câu tiếng Hàn..."></textarea>
+      <input type="text" class="input-field example-blank-input" placeholder="Từ cần khuyết trong câu này (để trống = giống từ Hàn ở trên)">
       <textarea class="input-field example-vi-input" rows="2" placeholder="Dịch tiếng Việt..."></textarea>
     `;
 
     slot.querySelector(".example-kr-input").value = existing.example;
+    slot.querySelector(".example-blank-input").value = existing.blankWord || "";
     slot.querySelector(".example-vi-input").value = existing.exampleVi;
 
     container.appendChild(slot);
@@ -930,6 +941,7 @@ async function handleGenerateAllExamples() {
     const slots = document.querySelectorAll("#exampleSlotsContainer .example-slot");
     slots.forEach((slot, i) => {
       slot.querySelector(".example-kr-input").value = results[i] ? results[i].example : "";
+      slot.querySelector(".example-blank-input").value = results[i] ? results[i].blankWord : "";
       slot.querySelector(".example-vi-input").value = results[i] ? results[i].exampleVi : "";
     });
     showToast(`✓ Đã tạo ${results.length} câu ví dụ`);
@@ -942,11 +954,13 @@ async function handleGenerateAllExamples() {
 }
 
 function collectExamplesFromForm() {
+  const kr = document.getElementById("cardFormKr").value.trim();
   const examples = [];
   document.querySelectorAll("#exampleSlotsContainer .example-slot").forEach(slot => {
     const example = slot.querySelector(".example-kr-input").value.trim();
     const exampleVi = slot.querySelector(".example-vi-input").value.trim();
-    if (example) examples.push({ example, exampleVi });
+    const blankWord = slot.querySelector(".example-blank-input").value.trim() || kr;
+    if (example) examples.push({ example, exampleVi, blankWord });
   });
   return examples;
 }
@@ -1162,28 +1176,41 @@ Nghĩa: <nghĩa tiếng Việt ngắn gọn, có thể ghi vài nghĩa cách nha
  * Gọi 1 lần duy nhất (không phải N lần riêng) để AI có ngữ cảnh tạo ra các câu
  * thực sự khác chủ đề/độ dài nhau, tránh tình trạng mỗi câu sinh riêng lẻ lại
  * xoay quanh cùng 1 chủ đề mặc định.
- * @returns {Promise<Array<{example: string, exampleVi: string}>>}
+ *
+ * Mỗi câu cũng yêu cầu AI trả về đúng "dạng chữ" của từ khi nó xuất hiện trong
+ * câu đó (blankWord) — vì tiếng Hàn chia động từ/tính từ theo ngữ cảnh, dạng gốc
+ * (krWord) hầu như không xuất hiện y nguyên trong câu tự nhiên. Nếu chỉ khuyết
+ * đúng dạng gốc, tab "Điền từ" sẽ không tìm thấy chữ để tạo chỗ trống.
+ * @returns {Promise<Array<{example: string, exampleVi: string, blankWord: string}>>}
  */
 async function aiGenerateExampleSentences(apiKey, krWord, count) {
-  const prompt = `Viết ${count} câu ví dụ tiếng Hàn khác nhau, mỗi câu đều có chứa đúng từ "${krWord}".
+  const prompt = `Viết ${count} câu ví dụ tiếng Hàn khác nhau, mỗi câu đều có chứa từ "${krWord}" (ở dạng đã chia phù hợp ngữ cảnh câu, không cần giữ nguyên dạng gốc).
 Yêu cầu bắt buộc:
 - ${count} câu phải thuộc ${count} chủ đề/tình huống khác nhau (ví dụ: đời thường, công việc, học tập, du lịch, tình cảm, tin tức, trò chuyện bạn bè...) — không để 2 câu cùng chủ đề.
 - Độ dài đa dạng: có câu ngắn, có câu trung bình, có câu dài — không để các câu dài ngắn giống nhau.
 - Mỗi câu kèm bản dịch tiếng Việt tương ứng.
+- Với mỗi câu, ghi rõ ĐÚNG NGUYÊN VĂN cụm chữ của từ "${krWord}" như nó xuất hiện trong câu đó (ví dụ nếu câu chia thành "회자되었습니다" thì ghi đúng "회자되었습니다", không ghi lại dạng gốc).
 
 Trả lời CHÍNH XÁC theo định dạng sau (đánh số từ 1 đến ${count}), không thêm nội dung nào khác:
 1. Câu: <câu tiếng Hàn>
+Từ trong câu: <đúng cụm chữ của từ như xuất hiện trong câu này>
 Dịch: <bản dịch tiếng Việt>
 2. Câu: <câu tiếng Hàn>
+Từ trong câu: <đúng cụm chữ của từ như xuất hiện trong câu này>
 Dịch: <bản dịch tiếng Việt>
 (tiếp tục đến hết ${count} câu theo đúng mẫu trên)`;
 
   const rawText = await callGeminiText(apiKey, prompt);
   const results = [];
-  const blockRegex = /\d+\.\s*Câu:\s*(.+?)\s*[\r\n]+\s*Dịch:\s*(.+?)(?=[\r\n]+\s*\d+\.\s*Câu:|$)/gs;
+  const blockRegex = /\d+\.\s*Câu:\s*(.+?)\s*[\r\n]+\s*Từ trong câu:\s*(.+?)\s*[\r\n]+\s*Dịch:\s*(.+?)(?=[\r\n]+\s*\d+\.\s*Câu:|$)/gs;
   let match;
   while ((match = blockRegex.exec(rawText)) !== null) {
-    results.push({ example: match[1].trim(), exampleVi: match[2].trim() });
+    const example = match[1].trim();
+    const blankWord = match[2].trim();
+    // Phòng trường hợp AI vẫn lỡ ghi sai/không khớp câu — bỏ qua để không tạo ra
+    // câu không thể khuyết được, thay vì âm thầm lưu 1 blankWord vô nghĩa.
+    if (!example.includes(blankWord)) continue;
+    results.push({ example, exampleVi: match[3].trim(), blankWord });
   }
   return results.slice(0, count);
 }

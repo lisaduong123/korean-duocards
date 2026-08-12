@@ -553,7 +553,11 @@ function readDeckRows(sheet) {
 function sanitizeExamples(examples) {
   if (!Array.isArray(examples)) return [];
   return examples
-    .map(e => ({ example: CLEAN(e && e.example), exampleVi: CLEAN(e && e.exampleVi) }))
+    .map(e => ({
+      example: CLEAN(e && e.example),
+      exampleVi: CLEAN(e && e.exampleVi),
+      blankWord: CLEAN(e && e.blankWord)
+    }))
     .filter(e => e.example)
     .slice(0, 5);
 }

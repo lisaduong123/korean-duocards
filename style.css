@@ -857,9 +857,18 @@ body {
   color: var(--color-text-soft);
 }
 
-.example-slot textarea {
+.example-slot textarea,
+.example-slot input[type="text"] {
   margin-bottom: 6px;
+}
+
+.example-slot textarea {
   resize: vertical;
+}
+
+.example-slot .example-blank-input {
+  font-size: 12.5px;
+  color: var(--color-text-soft);
 }
 
 .example-slot textarea:last-of-type {
