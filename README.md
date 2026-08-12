@@ -13,14 +13,14 @@
 - **Tra cứu từ vựng:** tìm kiếm nhanh theo tiếng Hàn / romaja / tiếng Việt.
 - **AI chấm điểm bản dịch:** dán Gemini API Key của riêng bạn để AI chấm điểm bản dịch Hàn → Việt. Key chỉ lưu trong `localStorage` của trình duyệt người dùng đó, ai dùng key của người ấy — không lộ, không dùng chung.
 - **Đăng nhập Google (Firebase Auth) & đồng bộ tiến độ chung:** đăng nhập bằng Google — phiên đăng nhập bền, tự làm mới ngầm, không mất khi refresh trang — để tự động lưu tiến độ học (đã nhớ/chưa nhớ) lên 1 Google Sheet dùng chung, thông qua Google Apps Script Web App (`gas/Code.gs`).
-- **Thư viện (Library) & Deck cá nhân:** tab "Thư viện" cho xem tất cả deck — **Basic Deck** (20 từ có sẵn, chỉ xem/học, không sửa) và **deck cá nhân tự tạo** (bấm "+" để tạo deck mới, tự thêm/sửa/xoá flashcard). Deck cá nhân lưu trên Google Sheet, gắn theo tài khoản Google đã đăng nhập — cần đăng nhập mới tạo/quản lý được. Deck đang chọn sẽ là deck được dùng ở tab Flashcard, Điền từ và Tra cứu.
-- **AI hỗ trợ tạo thẻ trong deck cá nhân:** gõ từ tiếng Hàn xong ngừng gõ ~1 giây, AI tự điền phiên âm + nghĩa tiếng Việt (dùng chung Gemini API Key đã lưu). Mỗi thẻ có tối đa **5 slot câu ví dụ** — bấm 1 nút **"✨ Tạo 5 câu bằng AI"** để sinh cả 5 câu cùng lúc (yêu cầu AI cho 5 chủ đề/độ dài khác nhau, tránh tình trạng sinh riêng lẻ ra 5 câu cùng 1 mô típ), không bắt buộc điền đủ, và có thể sửa tay từng câu sau khi AI tạo.
-- **Vá dữ liệu bằng AI:** nút "🔧 Quét & vá tất cả deck" ở tab Thư viện — quét toàn bộ deck cá nhân, tự dò lại bằng AI những câu ví dụ bị thiếu/sai dữ liệu (ví dụ do được tạo trước 1 bản cập nhật đổi cấu trúc lưu trữ) và lưu lại, không cần sửa tay từng thẻ. An toàn để bấm lại nhiều lần.
+- **Thư viện (Library) & Deck cá nhân:** tab "Thư viện" **chỉ để quản lý deck** (tạo/xoá deck, thêm/sửa/xoá flashcard trong đó) — **Basic Deck** (20 từ có sẵn, chỉ xem, không sửa) và **deck cá nhân tự tạo**, lưu trên Google Sheet gắn theo tài khoản Google đã đăng nhập. **Chọn deck nào để học** lại làm ở dropdown ngay tại tab Flashcard (không làm ở Thư viện) — chọn xong, tab Điền từ và Tra cứu & AI sẽ hiện "📚 Đang học: <tên deck>" để biết đang học deck nào; đổi deck thì quay lại tab Flashcard chọn deck khác.
+- **AI hỗ trợ tạo thẻ trong deck cá nhân:** gõ từ tiếng Hàn xong ngừng gõ ~1 giây, AI tự điền phiên âm + nghĩa tiếng Việt (dùng chung Gemini API Key đã lưu ở tab "Tôi"). Mỗi thẻ có tối đa **5 slot câu ví dụ** — bấm 1 nút **"✨ Tạo 5 câu bằng AI"** để sinh cả 5 câu cùng lúc (yêu cầu AI cho 5 chủ đề/độ dài khác nhau, tránh tình trạng sinh riêng lẻ ra 5 câu cùng 1 mô típ), không bắt buộc điền đủ, và có thể sửa tay từng câu sau khi AI tạo.
+- **Tab "Tôi":** nơi quản lý tài khoản/cài đặt chung — đăng nhập Google, Gemini API Key, và nút "🔧 Quét & vá dữ liệu câu ví dụ" (quét toàn bộ deck cá nhân, tự dò lại bằng AI những câu ví dụ bị thiếu/sai dữ liệu — ví dụ do được tạo trước 1 bản cập nhật đổi cấu trúc lưu trữ — và lưu lại, không cần sửa tay từng thẻ, an toàn bấm lại nhiều lần).
 
 ## 2. Cấu trúc project
 
 ```
-index.html   Giao diện chính (4 tab: Flashcard, Điền từ, Tra cứu & AI, Thư viện)
+index.html   Giao diện chính (5 tab: Flashcard, Điền từ, Tra cứu & AI, Thư viện, Tôi)
 style.css    Toàn bộ style
 app.js       Logic app: SRS, deck cá nhân, cloze test, tra cứu, gọi Gemini API, đăng nhập Google & đồng bộ GAS
 gas/Code.gs  Google Apps Script: API đọc/ghi Google Sheet + xác thực Google ID token

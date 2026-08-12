@@ -162,7 +162,7 @@ body {
   top: 6px;
   left: 6px;
   height: calc(100% - 12px);
-  width: calc(25% - 6px);
+  width: calc(20% - 6px);
   background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
   border-radius: 999px;
   z-index: 1;
@@ -235,6 +235,22 @@ body {
 
 .active-deck-label:empty {
   display: none;
+}
+
+.deck-selector-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.deck-selector-row .field-label {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.deck-selector-row select {
+  flex: 1;
 }
 
 /* ---------------------------------- FLASHCARD ---------------------------------- */

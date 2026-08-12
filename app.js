@@ -352,10 +352,11 @@ function updateStatsPill() {
 function updateActiveDeckLabels() {
   const deckName = getActiveDeck().name;
   const text = `📚 Đang học: ${deckName}`;
-  const flashLabel = document.getElementById("flashActiveDeckLabel");
   const clozeLabel = document.getElementById("clozeActiveDeckLabel");
-  if (flashLabel) flashLabel.textContent = text;
+  const lookupLabel = document.getElementById("lookupActiveDeckLabel");
   if (clozeLabel) clozeLabel.textContent = text;
+  if (lookupLabel) lookupLabel.textContent = text;
+  renderDeckSelector();
 }
 
 /* --------------------------------------------------------------------------
@@ -398,6 +399,7 @@ function switchTab(tabName, index) {
   } else if (tabName === "cloze") {
     refreshClozeQueue();
   } else if (tabName === "lookup") {
+    updateActiveDeckLabels();
     renderVocabList();
   } else if (tabName === "library") {
     showDeckListView();
@@ -486,6 +488,10 @@ function nextFlashcard() {
 
 function initFlashcardTab() {
   document.getElementById("flashcard").addEventListener("click", flipFlashcard);
+
+  document.getElementById("flashDeckSelector").addEventListener("change", (e) => {
+    changeActiveDeck(e.target.value);
+  });
 
   document.getElementById("btnRemember").addEventListener("click", () => {
     if (flashQueue.length === 0) return;
@@ -680,7 +686,19 @@ function initLookupTab() {
     renderVocabList(e.target.value);
   });
 
-  // API Key Gemini
+  // Câu ví dụ ngẫu nhiên
+  pickRandomSampleSentence();
+  document.getElementById("btnRandomSentence").addEventListener("click", pickRandomSampleSentence);
+
+  // Nút chấm điểm AI
+  document.getElementById("btnGrade").addEventListener("click", handleGradeTranslation);
+}
+
+/* --------------------------------------------------------------------------
+   8b2. TAB 5 — TÔI (tài khoản Google, Gemini API Key, cài đặt/vá dữ liệu)
+   -------------------------------------------------------------------------- */
+function initMeTab() {
+  // API Key Gemini — dùng chung cho AI chấm điểm (Tra cứu & AI) và AI tạo thẻ (Thư viện)
   const apiKeyInput = document.getElementById("apiKeyInput");
   apiKeyInput.value = localStorage.getItem("koreanApp_geminiKey") || "";
 
@@ -699,12 +717,8 @@ function initLookupTab() {
   document.getElementById("btnGoogleSignOut").addEventListener("click", signOutGoogle);
   updateGoogleSyncUI();
 
-  // Câu ví dụ ngẫu nhiên
-  pickRandomSampleSentence();
-  document.getElementById("btnRandomSentence").addEventListener("click", pickRandomSampleSentence);
-
-  // Nút chấm điểm AI
-  document.getElementById("btnGrade").addEventListener("click", handleGradeTranslation);
+  // Vá dữ liệu câu ví dụ cũ
+  document.getElementById("btnRepairBlankWords").addEventListener("click", handleRepairBlankWords);
 }
 
 let currentSampleSentence = null;
@@ -751,7 +765,6 @@ function initLibraryTab() {
 
   document.getElementById("btnSaveCard").addEventListener("click", handleSaveCard);
   document.getElementById("btnGenerateAllExamples").addEventListener("click", handleGenerateAllExamples);
-  document.getElementById("btnRepairBlankWords").addEventListener("click", handleRepairBlankWords);
 
   setupAiAutoFill();
 }
@@ -870,12 +883,6 @@ function renderDeckGrid() {
 
     const actionsEl = tile.querySelector(".deck-tile-actions");
 
-    const studyBtn = document.createElement("button");
-    studyBtn.className = "btn btn-primary btn-sm";
-    studyBtn.textContent = "Học deck này";
-    studyBtn.addEventListener("click", () => selectDeckAndStudy(deck.id));
-    actionsEl.appendChild(studyBtn);
-
     if (!deck.isBasic) {
       const manageBtn = document.createElement("button");
       manageBtn.className = "btn btn-secondary btn-sm";
@@ -906,10 +913,28 @@ function renderDeckGrid() {
   }
 }
 
-function selectDeckAndStudy(deckId) {
+/** Đổi deck đang học, gọi khi người dùng chọn 1 deck khác ở dropdown trong tab Flashcard. */
+function changeActiveDeck(deckId) {
+  if (deckId === activeDeckId) return;
   activeDeckId = deckId;
   saveActiveDeckId(deckId);
-  switchTab("flashcard", 0);
+  refreshFlashQueue();
+}
+
+/** Render lại dropdown chọn deck ở tab Flashcard, phản ánh đúng danh sách deck hiện có. */
+function renderDeckSelector() {
+  const select = document.getElementById("flashDeckSelector");
+  if (!select) return;
+
+  select.innerHTML = "";
+  getAllDecks().forEach(deck => {
+    const option = document.createElement("option");
+    option.value = deck.id;
+    option.textContent = `${deck.isBasic ? "📖" : "📁"} ${deck.name} (${deck.cards.length} thẻ)`;
+    select.appendChild(option);
+  });
+
+  select.value = getActiveDeck().id;
 }
 
 function openDeckDetail(deckId) {
@@ -1338,21 +1363,21 @@ firebaseAuth.onAuthStateChanged(async user => {
   // chỉ tồn tại gắn theo tài khoản đã đăng nhập.
   if (!user) {
     personalDecks = [];
+    decksLoaded = true;
     if (activeDeckId !== BASIC_DECK_ID) {
       activeDeckId = BASIC_DECK_ID;
       saveActiveDeckId(activeDeckId);
     }
-  }
-
-  if (currentTab === "library") {
-    await fetchPersonalDecks();
-    renderDeckGrid();
   } else {
-    decksLoaded = false; // tải lại khi mở tab Thư viện lần tới
+    // Luôn tải deck cá nhân khi đăng nhập, không chỉ khi đang ở tab Thư viện —
+    // dropdown chọn deck ở tab Flashcard cũng cần danh sách này.
+    await fetchPersonalDecks();
   }
 
-  if (currentTab === "flashcard") refreshFlashQueue();
+  if (currentTab === "library") renderDeckGrid();
+  else if (currentTab === "flashcard") refreshFlashQueue();
   else if (currentTab === "cloze") refreshClozeQueue();
+  else if (currentTab === "lookup") updateActiveDeckLabels();
 });
 
 function updateGoogleSyncUI() {
@@ -1410,6 +1435,7 @@ function initApp() {
   initClozeTab();
   initLookupTab();
   initLibraryTab();
+  initMeTab();
 
   refreshFlashQueue();
   updateStatsPill();

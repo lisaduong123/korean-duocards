@@ -46,6 +46,10 @@
         <span class="tab-icon">📚</span>
         <span>Thư viện</span>
       </button>
+      <button class="tab-btn" data-tab="me">
+        <span class="tab-icon">👤</span>
+        <span>Tôi</span>
+      </button>
       <div class="tab-indicator" id="tabIndicator"></div>
     </nav>
 
@@ -56,7 +60,12 @@
       <section class="tab-panel active" id="panel-flashcard">
         <div class="panel-inner">
 
-          <p class="active-deck-label" id="flashActiveDeckLabel"></p>
+          <div class="deck-selector-row">
+            <label class="field-label" for="flashDeckSelector">📚 Đang học</label>
+            <select class="input-field" id="flashDeckSelector">
+              <!-- injected by JS -->
+            </select>
+          </div>
 
           <div class="progress-row">
             <div class="progress-track">
@@ -140,6 +149,7 @@
           <!-- Vocabulary list -->
           <div class="card-block">
             <h2 class="block-title">📚 Danh sách từ vựng</h2>
+            <p class="active-deck-label" id="lookupActiveDeckLabel"></p>
             <input type="text" id="searchVocab" class="input-field" placeholder="Tìm kiếm từ vựng (Hàn / Việt)...">
             <div class="vocab-list" id="vocabList">
               <!-- injected by JS -->
@@ -149,13 +159,7 @@
           <!-- AI Grading -->
           <div class="card-block">
             <h2 class="block-title">🤖 AI Chấm điểm bản dịch</h2>
-
-            <label class="field-label">Gemini API Key</label>
-            <div class="input-with-btn">
-              <input type="password" id="apiKeyInput" class="input-field" placeholder="Dán API Key Gemini của bạn...">
-              <button class="btn btn-secondary btn-sm" id="btnSaveKey">Lưu</button>
-            </div>
-            <p class="hint-text">API Key được lưu cục bộ (localStorage) trên trình duyệt của bạn, không gửi đi đâu khác.</p>
+            <p class="hint-text">Dùng chung Gemini API Key đã lưu ở tab "Tôi".</p>
 
             <label class="field-label mt">Câu tiếng Hàn cần dịch</label>
             <div class="sample-sentence-box" id="sampleSentenceBox">아침에 일어나서 커피를 마셨어요.</div>
@@ -175,14 +179,6 @@
               </div>
               <p id="aiResultText"></p>
             </div>
-
-            <div class="gsync-block">
-              <h3 class="field-label mt">☁️ Đồng bộ tiến độ học</h3>
-              <p class="hint-text" id="gsyncStatusText">Đăng nhập Google để tự động lưu tiến độ học (đã nhớ/chưa nhớ) lên hệ thống chung.</p>
-              <button class="btn btn-secondary btn-sm" id="btnGoogleSignIn">🔑 Đăng nhập bằng Google</button>
-              <button class="btn btn-tertiary btn-sm" id="btnGoogleSignOut" style="display:none;">Đăng xuất</button>
-            </div>
-
           </div>
 
         </div>
@@ -197,7 +193,7 @@
 
             <div class="card-block" id="libraryLoginPrompt" style="display:none;">
               <h2 class="block-title">🔒 Cần đăng nhập để tạo deck cá nhân</h2>
-              <p class="hint-text">Deck cá nhân được lưu trên Google Sheet gắn theo tài khoản của bạn — vào tab "Tra cứu & AI" để đăng nhập Google trước. Basic Deck vẫn học được bình thường không cần đăng nhập.</p>
+              <p class="hint-text">Deck cá nhân được lưu trên Google Sheet gắn theo tài khoản của bạn — vào tab "Tôi" để đăng nhập Google trước. Basic Deck vẫn học được bình thường không cần đăng nhập.</p>
             </div>
 
             <div id="personalDecksSection">
@@ -208,13 +204,6 @@
                   <button class="btn btn-primary btn-sm" id="btnCreateDeck">Tạo deck</button>
                 </div>
                 <p class="hint-text">Deck cá nhân được lưu trên Google Sheet của bạn, đồng bộ theo tài khoản Google đã đăng nhập.</p>
-              </div>
-
-              <div class="card-block">
-                <h2 class="block-title">🔧 Kiểm tra & vá dữ liệu câu ví dụ</h2>
-                <p class="hint-text">Quét toàn bộ deck cá nhân, dùng AI dò lại đúng "từ cần khuyết" cho câu ví dụ nào bị thiếu/sai (ví dụ do được tạo trước 1 bản cập nhật nào đó). An toàn để bấm lại nhiều lần — câu đã đúng sẽ được bỏ qua.</p>
-                <button class="btn btn-secondary btn-sm" id="btnRepairBlankWords">🔧 Quét & vá tất cả deck</button>
-                <p class="hint-text" id="repairStatusText"></p>
               </div>
             </div>
 
@@ -261,6 +250,36 @@
                 <p class="hint-text">Mỗi câu ví dụ đã điền sẽ trở thành 1 câu hỏi riêng ở tab "Điền từ". Ô nhỏ dưới mỗi câu là từ sẽ bị khuyết — tiếng Hàn chia động từ/tính từ theo câu nên thường khác dạng gốc, AI tự điền đúng khi tạo câu; nếu bạn gõ tay thì nên điền đúng dạng chữ xuất hiện trong câu.</p>
               </div>
             </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ===================== TAB 5: TÔI (TÀI KHOẢN & CÀI ĐẶT) ===================== -->
+      <section class="tab-panel" id="panel-me">
+        <div class="panel-inner">
+
+          <div class="card-block">
+            <h2 class="block-title">☁️ Tài khoản Google</h2>
+            <p class="hint-text" id="gsyncStatusText">Đăng nhập Google để tự động lưu tiến độ học (đã nhớ/chưa nhớ) và deck cá nhân lên hệ thống chung.</p>
+            <button class="btn btn-secondary btn-sm" id="btnGoogleSignIn">🔑 Đăng nhập bằng Google</button>
+            <button class="btn btn-tertiary btn-sm" id="btnGoogleSignOut" style="display:none;">Đăng xuất</button>
+          </div>
+
+          <div class="card-block">
+            <h2 class="block-title">🔑 Gemini API Key</h2>
+            <div class="input-with-btn">
+              <input type="password" id="apiKeyInput" class="input-field" placeholder="Dán API Key Gemini của bạn...">
+              <button class="btn btn-secondary btn-sm" id="btnSaveKey">Lưu</button>
+            </div>
+            <p class="hint-text">Dùng chung cho tính năng AI chấm điểm (tab Tra cứu & AI) và AI hỗ trợ tạo thẻ (tab Thư viện). Key được lưu cục bộ (localStorage) trên trình duyệt của bạn, không gửi đi đâu khác.</p>
+          </div>
+
+          <div class="card-block">
+            <h2 class="block-title">⚙️ Cài đặt</h2>
+            <p class="hint-text">Quét toàn bộ deck cá nhân, dùng AI dò lại đúng "từ cần khuyết" cho câu ví dụ nào bị thiếu/sai (ví dụ do được tạo trước 1 bản cập nhật nào đó). An toàn để bấm lại nhiều lần — câu đã đúng sẽ được bỏ qua.</p>
+            <button class="btn btn-secondary btn-sm" id="btnRepairBlankWords">🔧 Quét & vá dữ liệu câu ví dụ</button>
+            <p class="hint-text" id="repairStatusText"></p>
           </div>
 
         </div>
