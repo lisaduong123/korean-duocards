@@ -175,6 +175,19 @@ Nếu sau này vẫn gặp lỗi `404` với thông báo kiểu "model ... is no
 1. Kiểm tra chắc chắn đang test qua link GitHub Pages thật (không phải mở file `index.html` trực tiếp) và đã hard-refresh (Ctrl+Shift+R) để loại trừ cache trình duyệt.
 2. Nếu vẫn lỗi, có thể alias `-latest` cũng đã bị đổi tên/ngừng hỗ trợ — vào `https://aistudio.google.com`, chọn "Get code" ở 1 model bất kỳ để xem tên model hiện tại Google đang đề xuất cho tài khoản của bạn, rồi cập nhật lại trong `app.js`.
 
+### Lỗi `503 UNAVAILABLE` ("model is currently experiencing high demand")
+
+Khác với lỗi `404` ở trên — đây **không phải lỗi do API Key hay code**, mà là Google báo model đang quá tải tạm thời. Cách phân biệt với lỗi do key/quota (xem bảng dưới, tra theo mã lỗi HTTP):
+
+| Mã lỗi | Ý nghĩa | Do đâu |
+|---|---|---|
+| `400` + "API key not valid" | Key sai/không hợp lệ | Do người dùng |
+| `403` PERMISSION_DENIED | Key không có quyền | Do người dùng/cấu hình |
+| `429` RESOURCE_EXHAUSTED | Vượt hạn mức miễn phí | Do người dùng (dùng vượt quota) |
+| `503` UNAVAILABLE | Model quá tải tạm thời | **Do Google**, không phải lỗi app |
+
+`callGeminiText()` (dùng chung cho AI chấm điểm, AI điền nghĩa, AI tạo câu ví dụ) **tự động thử lại tối đa 2 lần** khi gặp đúng lỗi `503` (chờ 2s rồi 4s trước mỗi lần thử lại) trước khi báo lỗi thật cho người dùng — vì lỗi này thường tự hết sau vài giây. Nếu vẫn lỗi sau khi thử lại, có thể kiểm tra độc lập bằng cách vào thẳng `https://aistudio.google.com` và thử chat với model — nếu ở đó cũng lỗi tương tự thì chắc chắn là Google đang quá tải, không liên quan đến app.
+
 ## 8b. Vì sao mỗi câu ví dụ cần `blankWord` riêng, và cách vá dữ liệu cũ
 
 **Bug đã gặp:** tab "Điền từ" tìm `kr` (dạng từ điển, ví dụ "회자되다") trong câu ví dụ để tạo chỗ trống. Nhưng tiếng Hàn chia động từ/tính từ theo ngữ cảnh — dạng từ điển hầu như không xuất hiện y nguyên trong câu tự nhiên (câu thật chứa "회자되었습니다", "회자될"...), nên phép so khớp chuỗi luôn thất bại, và Điền từ hiện cả câu mà không khuyết gì. Danh từ (không chia) như "선처"/"도배" không bị lỗi này vì tiểu từ chỉ nối thêm sau, không thay đổi phần đầu — nên bug chỉ lộ ra khi test đúng loại từ có chia (động từ/tính từ).

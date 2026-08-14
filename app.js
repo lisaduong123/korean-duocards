@@ -1246,8 +1246,13 @@ Nhận xét: <nhận xét ngắn gọn 2-3 câu bằng tiếng Việt, chỉ ra 
   };
 }
 
-/** Gọi Gemini API (generateContent), trả về text thô. Dùng chung cho mọi tính năng AI trong app. */
-async function callGeminiText(apiKey, prompt) {
+/**
+ * Gọi Gemini API (generateContent), trả về text thô. Dùng chung cho mọi tính năng AI trong app.
+ * Tự động thử lại (tối đa 2 lần, chờ tăng dần 2s/4s) khi gặp lỗi 503 "model đang quá tải" —
+ * đây là lỗi tạm thời từ phía Google (model UNAVAILABLE do spike nhu cầu), thường tự hết
+ * sau vài giây, không phải lỗi do API Key hay code sai.
+ */
+async function callGeminiText(apiKey, prompt, retriesLeft = 2) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   const response = await fetch(endpoint, {
@@ -1260,6 +1265,14 @@ async function callGeminiText(apiKey, prompt) {
 
   if (!response.ok) {
     const errText = await response.text();
+
+    if (response.status === 503 && retriesLeft > 0) {
+      const delayMs = (3 - retriesLeft) * 2000; // lần 1: 2s, lần 2: 4s
+      console.warn(`[callGeminiText] Model đang quá tải (503), thử lại sau ${delayMs}ms (còn ${retriesLeft} lần)...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      return callGeminiText(apiKey, prompt, retriesLeft - 1);
+    }
+
     throw new Error(`HTTP ${response.status} - ${errText}`);
   }
 
