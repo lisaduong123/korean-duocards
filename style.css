@@ -647,6 +647,11 @@ body {
   margin: 8px 0 0;
 }
 
+.status-error-text {
+  color: var(--color-danger-dark);
+  font-weight: 600;
+}
+
 .sample-sentence-box {
   background: var(--color-bg-alt);
   border-radius: var(--radius-sm);

@@ -1037,10 +1037,18 @@ async function handleGenerateAllExamples() {
   const genBtn = document.getElementById("btnGenerateAllExamples");
   genBtn.disabled = true;
   genBtn.textContent = "Đang tạo 5 câu...";
+  const statusEl = document.getElementById("generateExamplesStatus");
+  statusEl.textContent = "🤖 Đang gọi Gemini API, có thể mất vài chục giây...";
+  statusEl.className = "hint-text";
+
   try {
     const results = await aiGenerateExampleSentences(apiKey, kr, MAX_EXAMPLES_PER_CARD);
     if (results.length === 0) {
+      const msg = "⚠️ AI không trả về câu ví dụ hợp lệ (có thể do sai định dạng hoặc từ trong câu không khớp) — thử bấm lại. Xem Console (F12) để đọc nguyên văn phản hồi của AI.";
       showToast("⚠️ AI không trả về câu ví dụ hợp lệ, thử bấm lại");
+      statusEl.textContent = msg;
+      statusEl.className = "hint-text status-error-text";
+      console.warn("[handleGenerateAllExamples] AI trả về 0 câu hợp lệ. Kiểm tra log '[aiGenerateExampleSentences]' phía trên để xem raw text AI trả về.");
       return;
     }
     const slots = document.querySelectorAll("#exampleSlotsContainer .example-slot");
@@ -1050,8 +1058,12 @@ async function handleGenerateAllExamples() {
       slot.querySelector(".example-vi-input").value = results[i] ? results[i].exampleVi : "";
     });
     showToast(`✓ Đã tạo ${results.length} câu ví dụ`);
+    statusEl.textContent = `✓ Đã tạo ${results.length}/${MAX_EXAMPLES_PER_CARD} câu ví dụ.`;
   } catch (err) {
-    showToast("⚠️ Lỗi tạo câu ví dụ: " + err.message);
+    console.error("[handleGenerateAllExamples] Lỗi khi gọi AI tạo câu ví dụ:", err);
+    showToast("⚠️ Lỗi tạo câu ví dụ, xem chi tiết bên dưới nút");
+    statusEl.textContent = "⚠️ Lỗi: " + err.message + " — xem thêm chi tiết trong Console (F12 → tab Console).";
+    statusEl.className = "hint-text status-error-text";
   } finally {
     genBtn.disabled = false;
     genBtn.textContent = "✨ Tạo 5 câu bằng AI";
@@ -1311,7 +1323,10 @@ Dịch: <bản dịch tiếng Việt>
 (tiếp tục đến hết ${count} câu theo đúng mẫu trên)`;
 
   const rawText = await callGeminiText(apiKey, prompt);
+  console.log("[aiGenerateExampleSentences] Raw text AI trả về:\n" + rawText);
+
   const results = [];
+  const skipped = [];
   const blockRegex = /\d+\.\s*Câu:\s*(.+?)\s*[\r\n]+\s*Từ trong câu:\s*(.+?)\s*[\r\n]+\s*Dịch:\s*(.+?)(?=[\r\n]+\s*\d+\.\s*Câu:|$)/gs;
   let match;
   while ((match = blockRegex.exec(rawText)) !== null) {
@@ -1319,9 +1334,18 @@ Dịch: <bản dịch tiếng Việt>
     const blankWord = match[2].trim();
     // Phòng trường hợp AI vẫn lỡ ghi sai/không khớp câu — bỏ qua để không tạo ra
     // câu không thể khuyết được, thay vì âm thầm lưu 1 blankWord vô nghĩa.
-    if (!example.includes(blankWord)) continue;
+    if (!example.includes(blankWord)) {
+      skipped.push({ example, blankWord });
+      continue;
+    }
     results.push({ example, exampleVi: match[3].trim(), blankWord });
   }
+
+  if (skipped.length > 0) {
+    console.warn(`[aiGenerateExampleSentences] Bỏ qua ${skipped.length} câu vì "Từ trong câu" không khớp với câu:`, skipped);
+  }
+  console.log(`[aiGenerateExampleSentences] Parse được ${results.length}/${count} câu hợp lệ.`);
+
   return results.slice(0, count);
 }
 
