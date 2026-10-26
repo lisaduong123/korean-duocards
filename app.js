@@ -399,7 +399,6 @@ function updateActiveDeckLabels() {
    -------------------------------------------------------------------------- */
 function initTabs() {
   const tabButtons = document.querySelectorAll(".tab-btn");
-  const indicator = document.getElementById("tabIndicator");
 
   tabButtons.forEach((btn, index) => {
     btn.addEventListener("click", () => {
@@ -407,13 +406,24 @@ function initTabs() {
     });
   });
 
-  // Đặt vị trí ban đầu của indicator
   moveIndicatorTo(0);
+  window.addEventListener("resize", () => {
+    const activeIndex = [...tabButtons].findIndex(btn => btn.dataset.tab === currentTab);
+    if (activeIndex >= 0) moveIndicatorTo(activeIndex);
+  });
 }
 
 function moveIndicatorTo(index) {
+  const nav = document.querySelector(".tab-nav");
   const indicator = document.getElementById("tabIndicator");
-  indicator.style.transform = `translateX(${index * 100}%)`;
+  const button = nav.querySelectorAll(".tab-btn")[index];
+  if (!button) return;
+
+  const navRect = nav.getBoundingClientRect();
+  const buttonRect = button.getBoundingClientRect();
+  const baseLeft = Number.parseFloat(getComputedStyle(indicator).left) || 0;
+  indicator.style.width = `${buttonRect.width}px`;
+  indicator.style.transform = `translateX(${buttonRect.left - navRect.left - baseLeft}px)`;
 }
 
 function switchTab(tabName, index) {
