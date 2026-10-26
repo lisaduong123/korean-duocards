@@ -15,10 +15,9 @@ const SHEET_DECKS       = "Decks Cá Nhân";
 
 // Phải trùng khớp với projectId trong firebaseConfig ở app.js
 const FIREBASE_PROJECT_ID = "korean-duocards";
+const FIREBASE_WEB_API_KEY = "AIzaSyDW_XugXe6yA2WdPd4hzVNuSGttJyK62og";
 
-// Danh sách email được phép đồng bộ tiến độ / deck cá nhân lên sheet chung.
-// Vì token không được kiểm tra chữ ký mã hoá (xem verifyFirebaseIdToken), đây là lớp
-// chặn email lạ/ngẫu nhiên — thêm email bạn bè vào đây khi chia sẻ app cho họ dùng.
+// Danh sách email được phép đồng bộ dữ liệu lên sheet chung.
 const ALLOWED_EMAILS = [
   "leduong.0807@gmail.com"
 ];
@@ -414,6 +413,10 @@ function doPost(e) {
     if (payload.mode === "deleteCard") {
       return handleDeleteCard(payload);
     }
+    if (payload.mode === "saveLearningSource") return handleSaveLearningSource(payload);
+    if (payload.mode === "listLearningSources") return handleListLearningSources(payload);
+    if (payload.mode === "updateExtraction") return handleUpdateExtraction(payload);
+    if (payload.mode === "deleteLearningSource") return handleDeleteLearningSource(payload);
 
     const result = processText(payload);
     return jsonResponse(result);
@@ -423,52 +426,37 @@ function doPost(e) {
   }
 }
 
-/**
- * Giải mã phần payload của idToken (Firebase ID token) — KHÔNG kiểm tra chữ ký mã hoá,
- * vì Apps Script không có sẵn công cụ verify RSA. Bù lại bằng 2 lớp kiểm tra:
- *  1. aud/iss phải khớp đúng project Firebase của app này.
- *  2. email phải nằm trong ALLOWED_EMAILS (chặn email lạ/ngẫu nhiên).
- * Xem ghi chú đầy đủ về rủi ro của cách này trong README mục "Lưu ý bảo mật".
- * @returns {{email: string, name: string}|null} null nếu token không hợp lệ
- */
+/** Verify the Firebase ID token with Identity Toolkit before trusting its identity. */
 function verifyFirebaseIdToken(idToken) {
   if (!idToken) {
-    console.log("[verifyFirebaseIdToken] Không có idToken nào được gửi lên.");
     return null;
   }
   try {
+    const response = UrlFetchApp.fetch(
+      "https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=" + encodeURIComponent(FIREBASE_WEB_API_KEY),
+      {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify({ idToken }),
+        muteHttpExceptions: true
+      }
+    );
+    if (response.getResponseCode() !== 200) return null;
+
     const parts = idToken.split(".");
-    if (parts.length !== 3) {
-      console.log("[verifyFirebaseIdToken] THẤT BẠI: token không đúng định dạng JWT.");
-      return null;
-    }
+    if (parts.length !== 3) return null;
+    const claims = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[1])).getDataAsString());
+    const expectedIssuer = "https://securetoken.google.com/" + FIREBASE_PROJECT_ID;
+    if (claims.aud !== FIREBASE_PROJECT_ID || claims.iss !== expectedIssuer) return null;
 
-    let payloadB64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    while (payloadB64.length % 4 !== 0) payloadB64 += "=";
-    const data = JSON.parse(Utilities.newBlob(Utilities.base64Decode(payloadB64)).getDataAsString());
+    const result = JSON.parse(response.getContentText());
+    const data = result.users && result.users[0];
+    if (!data || !data.email || !data.emailVerified) return null;
+    if (ALLOWED_EMAILS.indexOf(data.email) === -1) return null;
 
-    const expectedIss = "https://securetoken.google.com/" + FIREBASE_PROJECT_ID;
-    if (data.aud !== FIREBASE_PROJECT_ID || data.iss !== expectedIss) {
-      console.log("[verifyFirebaseIdToken] THẤT BẠI: aud/iss không khớp project Firebase. aud=" + data.aud + " iss=" + data.iss);
-      return null;
-    }
-    if (data.exp && Math.floor(Date.now() / 1000) > data.exp) {
-      console.log("[verifyFirebaseIdToken] THẤT BẠI: token đã hết hạn.");
-      return null;
-    }
-    if (!data.email || !data.email_verified) {
-      console.log("[verifyFirebaseIdToken] THẤT BẠI: thiếu email hoặc email_verified không phải true.");
-      return null;
-    }
-    if (ALLOWED_EMAILS.indexOf(data.email) === -1) {
-      console.log("[verifyFirebaseIdToken] THẤT BẠI: email không nằm trong ALLOWED_EMAILS: " + data.email);
-      return null;
-    }
-
-    console.log("[verifyFirebaseIdToken] THÀNH CÔNG cho email: " + data.email);
-    return { email: data.email, name: data.name || data.email };
+    return { email: data.email, name: data.displayName || data.email };
   } catch (err) {
-    console.log("[verifyFirebaseIdToken] EXCEPTION: " + err.message);
+    console.log("[verifyFirebaseIdToken] Verification failed: " + err.message);
     return null;
   }
 }
@@ -516,7 +504,11 @@ function handleProgressSync(payload) {
 // Cột "Ví Dụ (JSON)" chứa mảng JSON tối đa 5 câu ví dụ: [{"example":"...","exampleVi":"..."}]
 // — dùng JSON trong 1 cột thay vì cố định 10 cột riêng, vì số câu ví dụ mỗi thẻ là tuỳ chọn (0-5).
 // ================================================================================
-const DECKS_HEADER = ["Email", "DeckID", "Tên Deck", "CardID", "Hàn", "Romaja", "Việt", "Ví Dụ (JSON)"];
+const DECKS_HEADER = ["Email", "DeckID", "Tên Deck", "CardID", "Hàn", "Romaja", "Việt", "Ví Dụ (JSON)", "SourceID", "ExtractionID"];
+const SOURCES_SHEET = "Nguồn học";
+const EXTRACTED_VOCAB_SHEET = "Từ vựng trích xuất";
+const SOURCES_HEADER = ["SourceID", "Email", "Tiêu đề", "Nội dung", "Ngày tạo"];
+const EXTRACTED_VOCAB_HEADER = ["ExtractionID", "SourceID", "Email", "Từ gốc", "Romaja", "Nghĩa", "Dạng trong nguồn", "Ngữ cảnh", "Ví dụ (JSON)", "Trạng thái", "DeckID", "CardID", "Ngày tạo"];
 
 function getOrCreateDecksSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -545,8 +537,22 @@ function readDeckRows(sheet) {
   return values.map((row, i) => ({
     rowIndex: i + 2, // vị trí dòng thật trên sheet (1-based, có header)
     email: row[0], deckId: row[1], deckName: row[2], cardId: row[3],
-    kr: row[4], romaja: row[5], vi: row[6], examples: parseExamplesJson(row[7])
+    kr: row[4], romaja: row[5], vi: row[6], examples: parseExamplesJson(row[7]),
+    sourceId: row[8] || "", extractionId: row[9] || ""
   }));
+}
+
+function getOrCreateLearningSheet(name, headers) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) sheet = ss.insertSheet(name);
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  return sheet;
+}
+
+function readRowsWithHeader(sheet, headers) {
+  const lastRow = sheet.getLastRow();
+  return lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
 }
 
 /** Chuẩn hoá + giới hạn tối đa 5 câu ví dụ hợp lệ (bỏ câu rỗng) từ payload.examples. */
@@ -572,7 +578,8 @@ function handleListDecks(payload) {
     if (!decksById[r.deckId]) decksById[r.deckId] = { id: r.deckId, name: r.deckName, cards: [] };
     if (r.cardId) {
       decksById[r.deckId].cards.push({
-        id: r.cardId, kr: r.kr, romaja: r.romaja, vi: r.vi, examples: r.examples
+        id: r.cardId, kr: r.kr, romaja: r.romaja, vi: r.vi, examples: r.examples,
+        sourceId: r.sourceId, extractionId: r.extractionId
       });
     }
   });
@@ -588,7 +595,7 @@ function handleCreateDeck(payload) {
   if (!deckName) return jsonResponse({ success: false, error: "Thiếu tên deck." });
 
   const deckId = Utilities.getUuid();
-  getOrCreateDecksSheet().appendRow([user.email, deckId, deckName, "", "", "", "", ""]);
+  getOrCreateDecksSheet().appendRow([user.email, deckId, deckName, "", "", "", "", "", "", ""]);
 
   return jsonResponse({ success: true, deckId, name: deckName });
 }
@@ -598,7 +605,11 @@ function handleDeleteDeck(payload) {
   if (!user) return jsonResponse({ success: false, error: "Xác thực Google không hợp lệ hoặc đã hết hạn." });
 
   const sheet = getOrCreateDecksSheet();
-  const rowsToDelete = readDeckRows(sheet)
+  const ownedRows = readDeckRows(sheet);
+  ownedRows
+    .filter(r => r.email === user.email && r.deckId === payload.deckId && r.extractionId)
+    .forEach(r => resetExtractionForCard(r.extractionId, user.email));
+  const rowsToDelete = ownedRows
     .filter(r => r.email === user.email && r.deckId === payload.deckId)
     .map(r => r.rowIndex)
     .sort((a, b) => b - a); // xoá từ dưới lên để không lệch chỉ số dòng
@@ -619,10 +630,39 @@ function handleAddCard(payload) {
   }
 
   const cardId = Utilities.getUuid();
-  getOrCreateDecksSheet().appendRow([
+  const sheet = getOrCreateDecksSheet();
+  const ownedRows = readDeckRows(sheet);
+  const ownsDeck = ownedRows.some(row => row.email === user.email && row.deckId === payload.deckId);
+  if (!ownsDeck) return jsonResponse({ success: false, error: "Không tìm thấy deck của tài khoản này." });
+
+  let extraction = null;
+  if (payload.extractionId) {
+    const extractionSheet = getOrCreateLearningSheet(EXTRACTED_VOCAB_SHEET, EXTRACTED_VOCAB_HEADER);
+    const extractionRows = readRowsWithHeader(extractionSheet, EXTRACTED_VOCAB_HEADER);
+    extraction = extractionRows.find(row => row[0] === payload.extractionId && row[2] === user.email);
+    if (!extraction) return jsonResponse({ success: false, error: "Không tìm thấy từ trích xuất của tài khoản này." });
+    if (extraction[1] !== payload.sourceId) return jsonResponse({ success: false, error: "Nguồn học không khớp với từ trích xuất." });
+
+    const existing = ownedRows.find(row => row.email === user.email && row.deckId === payload.deckId && row.kr.toLowerCase() === kr.toLowerCase());
+    if (existing) {
+      const index = extractionRows.indexOf(extraction);
+      extractionSheet.getRange(index + 2, 10, 1, 3).setValues([["already_in_deck", payload.deckId, existing.cardId]]);
+      return jsonResponse({ success: true, cardId: existing.cardId, alreadyExists: true });
+    }
+  }
+
+  sheet.appendRow([
     user.email, payload.deckId, CLEAN(payload.deckName), cardId,
-    kr, CLEAN(payload.romaja), vi, JSON.stringify(sanitizeExamples(payload.examples))
+    kr, CLEAN(payload.romaja), vi, JSON.stringify(sanitizeExamples(payload.examples)),
+    CLEAN(payload.sourceId), CLEAN(payload.extractionId)
   ]);
+
+  if (extraction) {
+    const extractionSheet = getOrCreateLearningSheet(EXTRACTED_VOCAB_SHEET, EXTRACTED_VOCAB_HEADER);
+    const index = readRowsWithHeader(extractionSheet, EXTRACTED_VOCAB_HEADER)
+      .findIndex(row => row[0] === payload.extractionId && row[2] === user.email);
+    extractionSheet.getRange(index + 2, 10, 1, 3).setValues([["added", payload.deckId, cardId]]);
+  }
 
   return jsonResponse({ success: true, cardId });
 }
@@ -654,7 +694,103 @@ function handleDeleteCard(payload) {
   );
   if (!row) return jsonResponse({ success: false, error: "Không tìm thấy thẻ." });
 
+  if (row.extractionId) resetExtractionForCard(row.extractionId, user.email);
   sheet.deleteRow(row.rowIndex);
+  return jsonResponse({ success: true });
+}
+
+function resetExtractionForCard(extractionId, email) {
+  const sheet = getOrCreateLearningSheet(EXTRACTED_VOCAB_SHEET, EXTRACTED_VOCAB_HEADER);
+  const rowIndex = readRowsWithHeader(sheet, EXTRACTED_VOCAB_HEADER)
+    .findIndex(row => row[0] === extractionId && row[2] === email);
+  if (rowIndex >= 0) sheet.getRange(rowIndex + 2, 10, 1, 3).setValues([["pending", "", ""]]);
+}
+
+function handleSaveLearningSource(payload) {
+  const user = verifyFirebaseIdToken(payload.idToken);
+  if (!user) return jsonResponse({ success: false, error: "Xác thực Google không hợp lệ hoặc đã hết hạn." });
+
+  const title = CLEAN(payload.title) || "Nguồn học mới";
+  const content = String(payload.content || "").trim();
+  const words = Array.isArray(payload.words) ? payload.words.slice(0, 60) : [];
+  if (!content || content.length > 20000) {
+    return jsonResponse({ success: false, error: "Nội dung nguồn phải từ 1 đến 20.000 ký tự." });
+  }
+
+  const sourceId = Utilities.getUuid();
+  const sourceSheet = getOrCreateLearningSheet(SOURCES_SHEET, SOURCES_HEADER);
+  const vocabSheet = getOrCreateLearningSheet(EXTRACTED_VOCAB_SHEET, EXTRACTED_VOCAB_HEADER);
+  sourceSheet.appendRow([sourceId, user.email, title, content, new Date()]);
+
+  const createdAt = new Date();
+  const rows = words.map(word => [
+    Utilities.getUuid(), sourceId, user.email, CLEAN(word.kr), CLEAN(word.romaja), CLEAN(word.vi),
+    CLEAN(word.surface), CLEAN(word.context), JSON.stringify(sanitizeExamples(word.examples)),
+    "pending", "", "", createdAt
+  ]).filter(row => row[3] && row[5]);
+  if (rows.length) {
+    vocabSheet.getRange(vocabSheet.getLastRow() + 1, 1, rows.length, EXTRACTED_VOCAB_HEADER.length).setValues(rows);
+  }
+  return jsonResponse({ success: true, sourceId, savedCount: rows.length });
+}
+
+function handleListLearningSources(payload) {
+  const user = verifyFirebaseIdToken(payload.idToken);
+  if (!user) return jsonResponse({ success: false, error: "Xác thực Google không hợp lệ hoặc đã hết hạn." });
+
+  const sourceRows = readRowsWithHeader(getOrCreateLearningSheet(SOURCES_SHEET, SOURCES_HEADER), SOURCES_HEADER)
+    .filter(row => row[1] === user.email);
+  const vocabRows = readRowsWithHeader(getOrCreateLearningSheet(EXTRACTED_VOCAB_SHEET, EXTRACTED_VOCAB_HEADER), EXTRACTED_VOCAB_HEADER)
+    .filter(row => row[2] === user.email);
+  const vocabBySource = {};
+  vocabRows.forEach(row => {
+    if (!vocabBySource[row[1]]) vocabBySource[row[1]] = [];
+    vocabBySource[row[1]].push({
+      id: row[0], kr: row[3], romaja: row[4], vi: row[5], surface: row[6], context: row[7],
+      examples: parseExamplesJson(row[8]), status: row[9], deckId: row[10], cardId: row[11]
+    });
+  });
+
+  const sources = sourceRows.map(row => ({
+    id: row[0], title: row[2], content: row[3], createdAt: row[4], words: vocabBySource[row[0]] || []
+  })).reverse();
+  return jsonResponse({ success: true, sources });
+}
+
+function handleUpdateExtraction(payload) {
+  const user = verifyFirebaseIdToken(payload.idToken);
+  if (!user) return jsonResponse({ success: false, error: "Xác thực Google không hợp lệ hoặc đã hết hạn." });
+  if (["pending", "skipped"].indexOf(payload.status) < 0) {
+    return jsonResponse({ success: false, error: "Trạng thái không hợp lệ." });
+  }
+
+  const sheet = getOrCreateLearningSheet(EXTRACTED_VOCAB_SHEET, EXTRACTED_VOCAB_HEADER);
+  const rowIndex = readRowsWithHeader(sheet, EXTRACTED_VOCAB_HEADER)
+    .findIndex(row => row[0] === payload.extractionId && row[2] === user.email);
+  if (rowIndex < 0) return jsonResponse({ success: false, error: "Không tìm thấy từ trích xuất." });
+  sheet.getRange(rowIndex + 2, 10).setValue(payload.status);
+  return jsonResponse({ success: true });
+}
+
+function handleDeleteLearningSource(payload) {
+  const user = verifyFirebaseIdToken(payload.idToken);
+  if (!user) return jsonResponse({ success: false, error: "Xác thực Google không hợp lệ hoặc đã hết hạn." });
+  const sourceSheet = getOrCreateLearningSheet(SOURCES_SHEET, SOURCES_HEADER);
+  const vocabSheet = getOrCreateLearningSheet(EXTRACTED_VOCAB_SHEET, EXTRACTED_VOCAB_HEADER);
+  const sourceRows = readRowsWithHeader(sourceSheet, SOURCES_HEADER);
+  const sourceIndex = sourceRows.findIndex(row => row[0] === payload.sourceId && row[1] === user.email);
+  if (sourceIndex < 0) return jsonResponse({ success: false, error: "Không tìm thấy nguồn học." });
+
+  const vocabRows = readRowsWithHeader(vocabSheet, EXTRACTED_VOCAB_HEADER);
+  const deckSheet = getOrCreateDecksSheet();
+  readDeckRows(deckSheet)
+    .filter(row => row.email === user.email && row.sourceId === payload.sourceId)
+    .forEach(row => deckSheet.getRange(row.rowIndex, 9, 1, 2).clearContent());
+  vocabRows.map((row, index) => ({ row, rowIndex: index + 2 }))
+    .filter(item => item.row[1] === payload.sourceId && item.row[2] === user.email)
+    .sort((a, b) => b.rowIndex - a.rowIndex)
+    .forEach(item => vocabSheet.deleteRow(item.rowIndex));
+  sourceSheet.deleteRow(sourceIndex + 2);
   return jsonResponse({ success: true });
 }
 

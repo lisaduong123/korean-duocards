@@ -9,20 +9,21 @@
 ## 1. Tính năng
 
 - **Flashcard + Spaced Repetition (SRS):** lật thẻ Hàn ⇄ Việt, đánh giá "Đã nhớ / Chưa nhớ", tự lên lịch ôn tập theo mức độ nhớ.
-- **Điền từ (Cloze test):** chọn từ đúng để điền vào chỗ trống trong câu ví dụ.
+- **Điền từ (Cloze test):** chọn từ đúng để điền vào chỗ trống; lựa chọn nhiễu được ưu tiên cùng dạng chia, độ dài và âm tiết đầu để luyện phân biệt từ trong ngữ cảnh.
 - **Tra cứu từ vựng:** tìm kiếm nhanh theo tiếng Hàn / romaja / tiếng Việt.
 - **AI chấm điểm bản dịch:** dán Gemini API Key của riêng bạn để AI chấm điểm bản dịch Hàn → Việt. Key chỉ lưu trong `localStorage` của trình duyệt người dùng đó, ai dùng key của người ấy — không lộ, không dùng chung.
 - **Đăng nhập Google (Firebase Auth) & đồng bộ tiến độ chung:** đăng nhập bằng Google — phiên đăng nhập bền, tự làm mới ngầm, không mất khi refresh trang — để tự động lưu tiến độ học (đã nhớ/chưa nhớ) lên 1 Google Sheet dùng chung, thông qua Google Apps Script Web App (`gas/Code.gs`).
 - **Thư viện (Library) & Deck cá nhân:** tab "Thư viện" **chỉ để quản lý deck** (tạo/xoá deck, thêm/sửa/xoá flashcard trong đó) — **Basic Deck** (20 từ có sẵn, chỉ xem, không sửa) và **deck cá nhân tự tạo**, lưu trên Google Sheet gắn theo tài khoản Google đã đăng nhập. **Chọn deck nào để học** lại làm ở dropdown ngay tại tab Flashcard (không làm ở Thư viện) — chọn xong, tab Điền từ và Tra cứu & AI sẽ hiện "📚 Đang học: <tên deck>" để biết đang học deck nào; đổi deck thì quay lại tab Flashcard chọn deck khác.
 - **AI hỗ trợ tạo thẻ trong deck cá nhân:** gõ từ tiếng Hàn xong ngừng gõ ~1 giây, AI tự điền phiên âm + nghĩa tiếng Việt (dùng chung Gemini API Key đã lưu ở tab "Tôi"). Mỗi thẻ có tối đa **5 slot câu ví dụ** — bấm 1 nút **"✨ Tạo 5 câu bằng AI"** để sinh cả 5 câu cùng lúc: khác chủ đề/độ dài nhau, thiên về cách dùng thực tế trong đời sống/công việc (không học thuật/giáo trình), và trộn văn phong (~60% 문어체 trang trọng, ~40% 구어체 khẩu ngữ) cho đa dạng. Không bắt buộc điền đủ 5, và có thể sửa tay từng câu sau khi AI tạo.
 - **Tab "Tôi":** nơi quản lý tài khoản/cài đặt chung — đăng nhập Google, Gemini API Key, và nút "🔧 Quét & vá dữ liệu câu ví dụ" (quét toàn bộ deck cá nhân, tự dò lại bằng AI những câu ví dụ bị thiếu/sai dữ liệu — ví dụ do được tạo trước 1 bản cập nhật đổi cấu trúc lưu trữ — và lưu lại, không cần sửa tay từng thẻ, an toàn bấm lại nhiều lần).
+- **Nguồn học & luyện dịch:** dán đoạn văn/hội thoại, AI tìm từ ngoài tất cả deck hiện có và tạo ví dụ bám nguồn; người học duyệt từng từ, chọn deck đích hoặc bỏ qua. Nguồn và danh sách từ được lưu vào history theo tài khoản. Có thể tạo hội thoại mô phỏng từ nguồn, luyện từng câu Hàn → Việt hoặc Việt → Hàn, mở đáp án và nghe tiếng Hàn bằng speech synthesis của trình duyệt (không nhận diện giọng nói).
 
 ## 2. Cấu trúc project
 
 ```
-index.html   Giao diện chính (5 tab: Flashcard, Điền từ, Tra cứu & AI, Thư viện, Tôi)
+index.html   Giao diện chính (6 tab: Flashcard, Điền từ, Tra cứu & AI, Nguồn học, Thư viện, Tôi)
 style.css    Toàn bộ style
-app.js       Logic app: SRS, deck cá nhân, cloze test, tra cứu, gọi Gemini API, đăng nhập Google & đồng bộ GAS
+app.js       Logic app: SRS, deck cá nhân, history nguồn học, luyện dịch, cloze, Gemini API, đăng nhập Google & GAS
 gas/Code.gs  Google Apps Script: API đọc/ghi Google Sheet + xác thực Google ID token
 ```
 
@@ -32,7 +33,7 @@ gas/Code.gs  Google Apps Script: API đọc/ghi Google Sheet + xác thực Googl
 
 Mỗi deck/thẻ cá nhân được cấp 1 ID dạng UUID (sinh bởi `Utilities.getUuid()` phía server), gắn theo email đã đăng nhập — vì vậy **bắt buộc phải đăng nhập Google** mới tạo/xem/sửa được deck cá nhân (tab Thư viện sẽ hiện thông báo yêu cầu đăng nhập nếu chưa đăng nhập). Đổi lại, deck cá nhân tự động đồng bộ đa thiết bị (đăng nhập cùng tài khoản ở máy khác vẫn thấy đúng deck đó), và không có rủi ro trùng ID giữa những người dùng khác nhau (UUID không bao giờ trùng).
 
-Tiến độ SRS (đã nhớ/chưa nhớ) của thẻ cá nhân vẫn chỉ lưu **local** (`localStorage`, xem mục 6) — không đồng bộ lên sheet `Tiến Độ Học` dùng chung, để tách bạch: `Tiến Độ Học` chỉ ghi lại lịch sử học Basic Deck (bộ từ chung), còn deck cá nhân là nội dung riêng tư của từng người.
+Tiến độ SRS (đã nhớ/chưa nhớ) của thẻ cá nhân vẫn chỉ lưu **local** (`localStorage`, xem mục 6) — không đồng bộ lên sheet `Tiến Độ Học` dùng chung. Nguồn học và từ AI trích xuất được lưu riêng theo email ở `Nguồn học` và `Từ vựng trích xuất`; thẻ được import vào deck có thêm `SourceID`/`ExtractionID` để truy về nguồn gốc.
 
 ---
 
@@ -83,8 +84,8 @@ Repo hiện tại: `https://github.com/lisaduong123/korean-duocards`
 1. Người dùng bấm nút "🔑 Đăng nhập bằng Google" trên tab "Tra cứu & AI" → Firebase SDK xử lý popup đăng nhập Google.
 2. `firebaseAuth.onAuthStateChanged()` tự động cập nhật trạng thái đăng nhập mỗi khi tải trang (kể cả không bấm gì) — đây là cơ chế "nhớ đăng nhập".
 3. Mỗi khi đồng bộ tiến độ hoặc thao tác deck cá nhân, `app.js` gọi `user.getIdToken()` (Firebase tự trả token còn hạn dùng hoặc tự làm mới ngầm) và gửi kèm lên Google Apps Script.
-4. `Code.gs` **giải mã** payload của token (không kiểm tra chữ ký mã hoá — xem lý do & rủi ro ở mục 7), kiểm tra `aud`/`iss` khớp đúng project Firebase, và kiểm tra `email` nằm trong danh sách `ALLOWED_EMAILS`.
-5. Nếu hợp lệ: ghi vào sheet `Tiến Độ Học` (tiến độ Basic Deck) hoặc sheet `Decks Cá Nhân` (deck/thẻ cá nhân) — tách biệt hoàn toàn với các sheet cũ (`Nhập Data`, `Raw Data`, `Nhập Data (Ngôn ngữ user)`, `Cặp từ`).
+4. `Code.gs` gửi ID token tới Firebase Identity Toolkit (`accounts:lookup`) để xác minh token và lấy email đã xác minh; email tiếp tục phải nằm trong `ALLOWED_EMAILS`.
+5. Nếu hợp lệ: thao tác dữ liệu theo email ở các sheet `Tiến Độ Học`, `Decks Cá Nhân`, `Nguồn học` và `Từ vựng trích xuất`, tách biệt với các sheet nội dung cũ.
 
 #### Bước A — Tạo Firebase project
 
@@ -119,12 +120,13 @@ Mở trực tiếp `index.html` bằng trình duyệt, hoặc dùng 1 static ser
 
 ## 5. Cách test end-to-end tính năng đồng bộ
 
-1. Mở link demo → tab **Tra cứu & AI** → bấm **🔑 Đăng nhập bằng Google**, đăng nhập thành công sẽ thấy dòng "✓ Đã đăng nhập: ...".
+1. Mở link demo → tab **Tôi** → bấm **🔑 Đăng nhập bằng Google**, đăng nhập thành công sẽ thấy dòng "✓ Đã đăng nhập: ...".
 2. Qua tab **Flashcard**, bấm "Đã nhớ" / "Chưa nhớ" vài từ (thuộc Basic Deck).
 3. Mở Google Sheet gốc → kiểm tra sheet **`Tiến Độ Học`** có dòng mới ghi đúng email/tên + vocab ID + hành động.
 4. Qua tab **Thư viện** → tạo 1 deck cá nhân, thêm/sửa/xoá vài thẻ → kiểm tra sheet **`Decks Cá Nhân`** phản ánh đúng thay đổi.
 5. Đóng trình duyệt, mở lại link demo → xác nhận vẫn thấy trạng thái "✓ Đã đăng nhập" mà không cần bấm lại (đây là điểm khác biệt so với GIS thuần trước đây).
 6. Các sheet cũ (`Nhập Data`, `Raw Data`, `Nhập Data (Ngôn ngữ user)`, `Cặp từ`) phải giữ nguyên, không có gì thay đổi.
+7. Qua tab **Nguồn học**, nhập một đoạn ngắn; xác nhận nguồn và các từ xuất hiện ở hai sheet mới, rồi thêm một từ vào deck để kiểm tra trạng thái và CardID được liên kết.
 
 ## 6. Dữ liệu lưu ở đâu
 
@@ -132,13 +134,14 @@ Mở trực tiếp `index.html` bằng trình duyệt, hoặc dùng 1 static ser
 - Gemini API Key: `localStorage`, riêng theo từng người dùng, không gửi lên đâu ngoài Google Gemini API.
 - Tiến độ đồng bộ chung của Basic Deck (chỉ khi đã đăng nhập Google): Google Sheet, sheet `Tiến Độ Học`.
 - Deck cá nhân + flashcard tự tạo (chỉ khi đã đăng nhập Google): Google Sheet, sheet `Decks Cá Nhân`.
+- Nguồn người học nhập và từ AI đề xuất (chỉ khi đã đăng nhập Google): các sheet `Nguồn học` và `Từ vựng trích xuất`; thẻ import có liên kết `SourceID`/`ExtractionID`.
 
 ### 6.1. Ý nghĩa các cột trong sheet `Tiến Độ Học`
 
 | Cột | Ý nghĩa |
 |---|---|
 | Thời gian | Thời điểm server ghi nhận dòng dữ liệu (giờ server Google, không phải giờ trình duyệt người dùng). |
-| Email / Tên | Danh tính giải mã từ Firebase ID token (xem mục 7 về giới hạn của cách xác thực này). |
+| Email / Tên | Danh tính lấy từ Firebase Identity Toolkit sau khi xác minh ID token. |
 | **Vocab ID** | ID của từ vựng, khớp với trường `id` trong mảng `VOCAB_DATA` ở đầu file `app.js` (hiện đánh số 1–20, mỗi số ứng với đúng 1 từ, ví dụ `id: 1` là "안녕하세요"). Muốn tra từ nào ứng với ID nào thì mở `app.js`, tìm `id: <số đó>`. Chỉ áp dụng cho Basic Deck — thẻ deck cá nhân không đồng bộ vào sheet này (xem mục 2.1). |
 | Hành động | Một trong 3 giá trị: `remember` (bấm "Đã nhớ" ở tab Flashcard), `forget` (bấm "Chưa nhớ"), hoặc `ai_grading` (dùng tính năng chấm điểm AI ở tab Tra cứu & AI). |
 | **Giá trị** | Ý nghĩa phụ thuộc vào cột "Hành động": với `remember`/`forget` là **cấp độ SRS** sau khi cập nhật (số nguyên 0–6, càng cao nghĩa là càng nhớ chắc — xem mảng `SRS_INTERVALS_DAYS` trong `app.js` để biết mỗi cấp độ ứng với bao lâu mới ôn lại); với `ai_grading` là **điểm số AI chấm** cho bản dịch (thang 0–10). |
@@ -154,6 +157,7 @@ Bảng phẳng, mỗi dòng là 1 thẻ; riêng deck rỗng có 1 "dòng đánh 
 | Tên Deck | Tên deck do người dùng đặt. |
 | Hàn / Romaja / Việt | Nội dung cơ bản của thẻ, tương ứng các trường `kr/romaja/vi` trong `VOCAB_DATA`. |
 | Ví Dụ (JSON) | Mảng JSON tối đa 5 câu ví dụ dạng `[{"example":"...","exampleVi":"...","blankWord":"..."}]`. Dùng JSON trong 1 cột thay vì cột cố định vì số câu ví dụ mỗi thẻ là tuỳ chọn (0–5, xem mục 1 "AI hỗ trợ tạo thẻ"). `blankWord` là đúng dạng chữ của từ **như nó xuất hiện trong câu đó** (không phải dạng từ điển) — xem mục 8b để hiểu vì sao cần tách riêng field này. |
+| SourceID / ExtractionID | Liên kết tùy chọn tới nguồn học và bản ghi từ trích xuất đã tạo ra thẻ. |
 
 **Lịch sử schema:** ban đầu cột này tách riêng `Ví Dụ` / `Ví Dụ Việt` (1 câu ví dụ/thẻ, dùng chung `blankWord` = từ dạng từ điển của cả thẻ). Khi nâng lên tối đa 5 câu, đã gộp thành 1 cột JSON; sau đó phát hiện bug (mục 8b) nên thêm field `blankWord` riêng cho từng câu. Mỗi lần đổi cấu trúc như vậy đều chạy 1 lần hàm migrate tạm (đọc dữ liệu cũ, ghi lại đúng định dạng mới, sau đó xoá hàm migrate) để không mất dữ liệu thẻ đã tạo trước đó — xem mục 9 (`clasp`) cho quy trình.
 
@@ -161,11 +165,8 @@ Bảng phẳng, mỗi dòng là 1 thẻ; riêng deck rỗng có 1 "dòng đánh 
 
 - Repo này là **public** — không bao giờ hardcode Gemini API Key hoặc bất kỳ secret nào tốn phí vào code, vì ai cũng đọc được trên GitHub. `firebaseConfig` trong `app.js` thì an toàn để public (Google thiết kế các giá trị này không phải bí mật).
 - GAS Web App URL được hardcode có chủ đích (không phải secret tốn phí), nhưng vì endpoint này công khai, mọi request ghi dữ liệu đều được kiểm tra qua `verifyFirebaseIdToken()` trước khi ghi Sheet.
-- **Giới hạn quan trọng cần biết:** `verifyFirebaseIdToken()` chỉ **giải mã** payload của token — **không kiểm tra chữ ký mã hoá (RSA)**, vì Apps Script không có sẵn công cụ verify RSA và tự viết thuật toán này khá rủi ro/dễ sai cho quy mô app này. Bù lại bằng 2 lớp kiểm tra không cần crypto:
-  1. `aud`/`iss` trong token phải khớp đúng `FIREBASE_PROJECT_ID` của app này (chặn token từ project Firebase khác).
-  2. `email` phải nằm trong mảng `ALLOWED_EMAILS` (chặn email lạ/ngẫu nhiên).
-
-  **Rủi ro thực tế:** ai đó đủ hiểu kỹ thuật, tìm được URL Apps Script (public trên GitHub) và biết trước 1 email nằm trong `ALLOWED_EMAILS`, có thể tự soạn 1 "token giả" (JWT với chữ ký không hợp lệ nhưng payload đúng định dạng) để giả mạo đúng người đó ghi dữ liệu rác. **Không** ảnh hưởng tới tài khoản Google thật của người bị giả mạo (không đọc được Gmail/Drive/mật khẩu), chỉ ảnh hưởng tới dữ liệu trong Sheet của app này. Chấp nhận đánh đổi này vì quy mô dùng cá nhân/chia sẻ bạn bè thân thiết, không phải mục tiêu đáng để ai đó bỏ công tấn công.
+- `verifyFirebaseIdToken()` xác minh ID token qua Firebase Identity Toolkit trước khi tin cậy email; GAS cần quyền `script.external_request` trong `gas/appsscript.json`. Sau khi deploy, cần cấp quyền UrlFetchApp trong Apps Script nếu Google yêu cầu.
+- Nội dung nguồn và danh sách từ được gửi tới Gemini bằng API key do người dùng cung cấp. Nội dung được lưu vào Sheet theo tài khoản đã đăng nhập; chỉ nhập tài liệu mà bạn có quyền lưu và xử lý qua dịch vụ AI.
 
 ## 8. Model Gemini đang dùng & lỗi 404 model not found
 
@@ -222,8 +223,8 @@ Lưu ý: cần bật **Google Apps Script API** tại `https://script.google.com
 
 1. **Deployment bị ghim vào version cũ, không phải HEAD.** `clasp deployments` cho thấy deployment ứng với URL `.../exec` đang dùng bị gắn vào 1 "version" cụ thể (snapshot), không tự động cập nhật theo code mới nhất trong editor — dù bạn đã "dán đè" code mới và bấm "Deploy" trên giao diện web, deployment vẫn có thể không thực sự tạo version mới nếu thao tác trên UI không đúng. Cách sửa chắc chắn 100%: `clasp deploy --deploymentId <id đúng bằng URL đang dùng>` — lệnh này luôn tạo version mới từ HEAD hiện tại và gắn thẳng vào deployment đó.
 
-2. **Thiếu quyền `script.external_request` cho `UrlFetchApp`.** (Gặp phải khi còn dùng cách xác thực cũ qua `oauth2.googleapis.com/tokeninfo` của Google Identity Services.) Khi thêm đoạn code gọi ra ngoài, Apps Script cần được cấp quyền mới. Vì `appsscript.json` gốc không khai báo `oauthScopes` rõ ràng, và code được đẩy lên qua API (`clasp push`) thay vì lưu trực tiếp trên trình duyệt, màn hình xin quyền không tự bật lên — khiến `UrlFetchApp.fetch` luôn ném lỗi `You do not have permission to call UrlFetchApp.fetch`, bị code tự bắt lỗi (`catch`) và trả về `null` một cách im lặng. Cách sửa: khai báo rõ `oauthScopes` trong `gas/appsscript.json`, push lại, rồi vào Apps Script editor chạy tay 1 hàm bất kỳ có gọi `UrlFetchApp` để màn hình "Authorization required" hiện ra và cấp quyền. Từ khi chuyển sang `verifyFirebaseIdToken()` (chỉ giải mã, không gọi mạng ra ngoài — xem mục 7), quyền này không còn thực sự cần thiết nữa, nhưng để nguyên trong `appsscript.json` cũng không hại gì.
+2. **Thiếu quyền `script.external_request` cho `UrlFetchApp`.** Token verification hiện gọi Firebase Identity Toolkit, vì vậy scope này bắt buộc. Nếu GAS báo thiếu quyền, push manifest mới và cấp quyền UrlFetchApp trong Apps Script editor.
 
 **Mẹo debug nhanh khi gặp lại tình trạng tương tự:** viết 1 hàm tạm kiểu `function testXyz() { ... }` gọi trực tiếp hàm nghi ngờ với dữ liệu thật, `clasp push`, rồi vào editor chọn đúng hàm đó ở dropdown và bấm Run — "Execution log" hiện ra ngay dưới sẽ show đầy đủ `console.log` và exception thật, đáng tin cậy hơn nhiều so với xem qua mục "Executions" của 1 lần gọi `doPost` từ xa.
 
-**Mẹo test API deck cá nhân bằng `curl` mà không cần trình duyệt:** vì `verifyFirebaseIdToken()` không kiểm tra chữ ký, có thể tự soạn 1 JWT giả (header + payload đúng định dạng, chữ ký để bậy) để gọi thẳng `doPost` — hữu ích để test nhanh `createDeck`/`addCard`/`listDecks`/... mà không cần đăng nhập thật qua trình duyệt. Lưu ý khi test trên Windows (Git Bash): **truyền JSON chứa ký tự tiếng Việt/Hàn qua tham số dòng lệnh của `curl` sẽ bị mã hoá sai** (ra dấu `?`) — phải ghi JSON ra 1 file UTF-8 rồi gửi bằng `curl --data-binary @file.json` mới đúng. Đây chỉ là hạn chế của môi trường test, không phải lỗi thật của app (trình duyệt luôn mã hoá UTF-8 đúng).
+**Test API account-scoped:** dùng ID token Firebase thật; token giả không được chấp nhận vì Identity Toolkit xác minh token trước khi xử lý request.

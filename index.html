@@ -42,6 +42,10 @@
         <span class="tab-icon">🤖</span>
         <span>Tra cứu & AI</span>
       </button>
+      <button class="tab-btn" data-tab="sources">
+        <span class="tab-icon">🗂️</span>
+        <span>Nguồn học</span>
+      </button>
       <button class="tab-btn" data-tab="library">
         <span class="tab-icon">📚</span>
         <span>Thư viện</span>
@@ -181,6 +185,61 @@
             </div>
           </div>
 
+        </div>
+      </section>
+
+      <!-- ===================== TAB: NGUỒN HỌC & LUYỆN DỊCH ===================== -->
+      <section class="tab-panel" id="panel-sources">
+        <div class="panel-inner">
+          <div class="card-block source-import-block">
+            <h2 class="block-title">🗂️ Nhập nội dung học</h2>
+            <p class="hint-text" id="sourceLoginHint">Đăng nhập Google để lưu nguồn học và history riêng của bạn.</p>
+            <p class="hint-text">Khi phân tích, nội dung được gửi tới Gemini bằng API key của bạn và lưu vào Google Sheet theo tài khoản đang đăng nhập.</p>
+            <label class="field-label mt" for="sourceTitleInput">Tên nguồn</label>
+            <input type="text" id="sourceTitleInput" class="input-field" placeholder="Ví dụ: Hội thoại ở quán cà phê">
+            <label class="field-label mt" for="sourceTextInput">Đoạn văn hoặc hội thoại</label>
+            <textarea id="sourceTextInput" class="input-field textarea-field source-text-input" rows="7" maxlength="20000" placeholder="Dán nội dung tiếng Hàn hoặc hội thoại cần học..."></textarea>
+            <div class="source-import-actions">
+              <span class="hint-text" id="sourceImportStatus">AI sẽ tìm từ ngoài các deck hiện có và tạo ví dụ theo ngữ cảnh này.</span>
+              <button class="btn btn-primary" id="btnAnalyzeSource">✨ Tìm từ mới</button>
+            </div>
+            <div id="sourceReviewList" class="source-review-list"></div>
+          </div>
+
+          <div class="card-block source-history-block">
+            <div class="source-history-heading">
+              <h2 class="block-title">📚 History nguồn học</h2>
+              <button class="btn btn-secondary btn-sm" id="btnRefreshSources">↻ Tải lại</button>
+            </div>
+            <div id="sourceHistoryList" class="source-history-list">
+              <p class="hint-text">Đăng nhập để xem các nguồn đã lưu.</p>
+            </div>
+          </div>
+
+          <div class="card-block source-practice-block" id="sourcePracticeBlock" style="display:none;">
+            <div class="source-history-heading">
+              <div>
+                <h2 class="block-title">🗣️ Luyện dịch từng câu</h2>
+                <p class="hint-text" id="practiceSourceTitle"></p>
+              </div>
+              <div class="source-practice-controls">
+                <label class="sr-only" for="practiceDirection">Chiều luyện dịch</label>
+                <select class="input-field" id="practiceDirection">
+                  <option value="ko-vi">Hàn → Việt</option>
+                  <option value="vi-ko">Việt → Hàn</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" id="btnGeneratePractice">Tạo hội thoại</button>
+              </div>
+            </div>
+            <div id="practiceSentence" class="practice-sentence">Chọn một nguồn học để bắt đầu.</div>
+            <div id="practiceAnswer" class="practice-answer" style="display:none;"></div>
+            <div class="source-practice-actions">
+              <button class="btn btn-secondary" id="btnSpeakPractice" disabled>🔊 Nghe</button>
+              <button class="btn btn-secondary" id="btnRevealPractice" disabled>Hiện đáp án</button>
+              <button class="btn btn-primary" id="btnNextPractice" disabled>Câu tiếp theo →</button>
+            </div>
+            <p class="hint-text" id="practiceStatus"></p>
+          </div>
         </div>
       </section>
 
