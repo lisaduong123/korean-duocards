@@ -742,6 +742,10 @@ function handleListLearningSources(payload) {
     .filter(row => row[1] === user.email);
   const vocabRows = readRowsWithHeader(getOrCreateLearningSheet(EXTRACTED_VOCAB_SHEET, EXTRACTED_VOCAB_HEADER), EXTRACTED_VOCAB_HEADER)
     .filter(row => row[2] === user.email);
+  const excludedWords = [...new Set(vocabRows
+    .filter(row => row[9] === "skipped" || row[9] === "known")
+    .map(row => CLEAN(row[3]))
+    .filter(Boolean))];
   const vocabBySource = {};
   vocabRows.forEach(row => {
     if (!vocabBySource[row[1]]) vocabBySource[row[1]] = [];
@@ -754,13 +758,13 @@ function handleListLearningSources(payload) {
   const sources = sourceRows.map(row => ({
     id: row[0], title: row[2], content: row[3], createdAt: row[4], words: vocabBySource[row[0]] || []
   })).reverse();
-  return jsonResponse({ success: true, sources });
+  return jsonResponse({ success: true, sources, excludedWords });
 }
 
 function handleUpdateExtraction(payload) {
   const user = verifyFirebaseIdToken(payload.idToken);
   if (!user) return jsonResponse({ success: false, error: "Xác thực Google không hợp lệ hoặc đã hết hạn." });
-  if (["pending", "skipped"].indexOf(payload.status) < 0) {
+  if (["pending", "skipped", "known"].indexOf(payload.status) < 0) {
     return jsonResponse({ success: false, error: "Trạng thái không hợp lệ." });
   }
 

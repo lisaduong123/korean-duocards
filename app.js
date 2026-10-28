@@ -107,12 +107,27 @@ function getCardExamples(card) {
 
 /** Gọi Google Apps Script và đọc JSON trả về (khác sendProgressToGAS: cần đọc kết quả nên không dùng no-cors). */
 async function callGAS(payload) {
-  const response = await fetch(GAS_URL, {
+  const response = await fetchWithTimeout(GAS_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify(payload)
-  });
+  }, 45000, "Google Apps Script");
   return response.json();
+}
+
+async function fetchWithTimeout(url, options, timeoutMs, serviceName) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error(`${serviceName} không phản hồi trong ${Math.ceil(timeoutMs / 1000)} giây.`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function fetchPersonalDecks() {
@@ -139,6 +154,7 @@ async function loadLearningSources() {
   const list = document.getElementById("sourceHistoryList");
   if (!firebaseAuth.currentUser) {
     learningSources = [];
+    excludedSourceWords = [];
     list.innerHTML = "<p class=\"hint-text\">Đăng nhập Google để lưu và xem history nguồn học.</p>";
     document.getElementById("btnAnalyzeSource").disabled = true;
     document.getElementById("sourceLoginHint").textContent = "Đăng nhập Google trong tab Tôi để dùng nguồn học cá nhân.";
@@ -146,13 +162,14 @@ async function loadLearningSources() {
   }
 
   document.getElementById("btnAnalyzeSource").disabled = false;
-  document.getElementById("sourceLoginHint").textContent = "Đoạn nhập và từ đã trích xuất được lưu riêng theo tài khoản Google của bạn.";
+  document.getElementById("sourceLoginHint").textContent = "Đoạn nhập, từ đã bỏ qua và từ đã biết được lưu riêng theo tài khoản Google của bạn.";
   list.innerHTML = "<p class=\"hint-text\">Đang tải history...</p>";
   try {
     const idToken = await firebaseAuth.currentUser.getIdToken();
     const result = await callGAS({ mode: "listLearningSources", idToken });
     if (!result.success) throw new Error(result.error || "Không tải được history.");
     learningSources = result.sources || [];
+    excludedSourceWords = result.excludedWords || [];
     renderLearningSources();
   } catch (err) {
     list.textContent = "Không tải được history: " + err.message;
@@ -344,6 +361,7 @@ let clozeQueue = [];
 let clozeIndex = 0;
 let clozeAnswered = false;
 let learningSources = [];
+let excludedSourceWords = [];
 let currentPracticeSource = null;
 let practiceLines = [];
 let practiceIndex = 0;
@@ -854,22 +872,36 @@ async function handleAnalyzeSource() {
   if (!content) return showToast("⚠️ Hãy nhập đoạn văn hoặc hội thoại trước");
   if (content.length > 20000) return showToast("⚠️ Nội dung tối đa 20.000 ký tự");
 
-  const knownWords = [...new Set(getAllDecks().flatMap(deck => deck.cards.map(card => card.kr)).filter(Boolean))];
-  const prompt = `Đọc nội dung tiếng Hàn dưới đây và tìm tối đa 12 từ hoặc cụm từ đáng học, KHÔNG có trong danh sách từ đã biết.
+  const knownWords = [...new Map(
+    [...getAllDecks().flatMap(deck => deck.cards.map(card => card.kr)), ...excludedSourceWords]
+      .filter(Boolean)
+      .map(word => [normalizeKoreanWord(word), word])
+  ).values()];
+  const prompt = `Đọc nội dung tiếng Hàn dưới đây và tìm tối đa 12 từ hoặc cụm từ đáng học, KHÔNG có trong danh sách loại trừ.
 Từ tiếng Hàn có thể bị chia; hãy trả về dạng từ điển trong "kr" và đúng dạng xuất hiện trong đoạn ở "surface".
 Chỉ lấy từ/cụm thực sự có trong nguồn, ưu tiên từ hữu ích, tránh tên riêng và từ chức năng quá cơ bản.
+Tuyệt đối không trả về và không tạo ví dụ cho bất kỳ từ/cụm nào trong danh sách loại trừ.
 Mỗi từ cần romaja, nghĩa Việt ngắn, một ngữ cảnh trích nguyên văn ngắn từ nguồn và đúng 1 câu ví dụ mới bám sát chủ đề/văn phong nguồn. Ví dụ gồm example, exampleVi, blankWord; blankWord phải xuất hiện nguyên dạng trong example.
-Danh sách từ đã biết: ${JSON.stringify(knownWords)}
+Danh sách cần loại trừ (đã có trong deck, đã bỏ qua ở nguồn trước hoặc người học đã biết nhuần nhuyễn): ${JSON.stringify(knownWords)}
 Nguồn:
 ${content}
 
 Trả về JSON duy nhất dạng {"words":[{"kr":"...","romaja":"...","vi":"...","surface":"...","context":"...","examples":[{"example":"...","exampleVi":"...","blankWord":"..."}]}]}.`;
 
   button.disabled = true;
-  status.textContent = "Đang phân tích nội dung và tạo ví dụ theo ngữ cảnh...";
+  status.textContent = "Bước 1/2: Đang gửi nội dung tới Gemini để phân tích...";
+  const startedAt = Date.now();
+  let retryMessage = "";
+  const progressTimer = setInterval(() => {
+    const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+    status.textContent = retryMessage
+      ? `${retryMessage} Đã chờ ${elapsedSeconds} giây.`
+      : `Bước 1/2: Gemini đang phân tích... Đã chờ ${elapsedSeconds} giây.`;
+  }, 5000);
   try {
     const parsed = parseGeminiJson(await callGeminiText(apiKey, prompt, 4, (attempt, delayMs) => {
-      status.textContent = `Gemini đang bận; tự thử lại lần ${attempt}/4 sau ${Math.ceil(delayMs / 1000)} giây...`;
+      retryMessage = `Gemini đang bận; tự thử lại lần ${attempt}/4 sau ${Math.ceil(delayMs / 1000)} giây.`;
+      status.textContent = retryMessage;
     }));
     const known = new Set(knownWords.map(normalizeKoreanWord));
     const seen = new Set();
@@ -885,6 +917,7 @@ Trả về JSON duy nhất dạng {"words":[{"kr":"...","romaja":"...","vi":"...
       ).slice(0, 2)
     })).filter(word => word.examples.length > 0).slice(0, 12);
 
+    status.textContent = `Bước 2/2: Gemini xong, có ${words.length} từ mới. Đang lưu nguồn vào Google Sheet...`;
     const idToken = await firebaseAuth.currentUser.getIdToken();
     const result = await callGAS({
       mode: "saveLearningSource", idToken, title: titleInput.value.trim(), content, words
@@ -897,8 +930,13 @@ Trả về JSON duy nhất dạng {"words":[{"kr":"...","romaja":"...","vi":"...
   } catch (err) {
     status.textContent = err.message.includes("UNAVAILABLE")
       ? "Gemini đang quá tải sau các lần tự thử lại. Nguồn chưa được lưu; nội dung vẫn còn trong ô. Chờ ít phút rồi bấm ‘Tìm từ mới’ lại nhé."
-      : "Không thể phân tích/lưu nội dung: " + err.message;
+      : err.message.includes("Gemini")
+        ? "Gemini phản hồi quá lâu. Nguồn chưa được lưu; nội dung vẫn còn trong ô để thử lại. Chi tiết: " + err.message
+      : err.message.includes("Google Apps Script")
+        ? "Gemini đã xử lý xong nhưng Google Apps Script không phản hồi. Nguồn chưa được xác nhận là đã lưu; kiểm tra deployment GAS rồi thử lại. Chi tiết: " + err.message
+        : "Không thể phân tích/lưu nội dung: " + err.message;
   } finally {
+    clearInterval(progressTimer);
     button.disabled = false;
   }
 }
@@ -907,6 +945,21 @@ async function updateExtractionStatus(extractionId, status) {
   const idToken = await firebaseAuth.currentUser.getIdToken();
   const result = await callGAS({ mode: "updateExtraction", idToken, extractionId, status });
   if (!result.success) throw new Error(result.error || "Không cập nhật được trạng thái.");
+}
+
+function refreshExcludedSourceWords() {
+  const words = learningSources.flatMap(source => source.words)
+    .filter(word => word.status === "skipped" || word.status === "known")
+    .map(word => word.kr)
+    .filter(Boolean);
+  excludedSourceWords = [...new Map(words.map(word => [normalizeKoreanWord(word), word])).values()];
+}
+
+async function setExtractedWordStatus(source, word, nextStatus) {
+  await updateExtractionStatus(word.id, nextStatus);
+  word.status = nextStatus;
+  refreshExcludedSourceWords();
+  renderLearningSources();
 }
 
 function renderLearningSources() {
@@ -940,6 +993,7 @@ function renderLearningSources() {
       const result = await callGAS({ mode: "deleteLearningSource", idToken, sourceId: source.id });
       if (!result.success) return showToast("⚠️ " + (result.error || "Không xóa được nguồn"));
       learningSources = learningSources.filter(item => item.id !== source.id);
+      refreshExcludedSourceWords();
       renderLearningSources();
     });
     actions.append(practiceButton, deleteButton);
@@ -987,56 +1041,124 @@ function renderExtractedWord(source, word) {
   controls.className = "source-word-controls";
   const status = document.createElement("span");
   status.className = "source-word-status";
-  const labels = { pending: "Chờ duyệt", skipped: "Đã bỏ qua", added: "Đã thêm", already_in_deck: "Đã có trong deck" };
+  const labels = {
+    pending: "Chờ duyệt",
+    skipped: "Bỏ qua ở các nguồn sau",
+    known: "Đã biết, loại khỏi gợi ý",
+    added: "Đã thêm",
+    already_in_deck: "Đã có trong deck"
+  };
   status.textContent = labels[word.status] || word.status;
   controls.appendChild(status);
 
-  if (word.status === "pending" && personalDecks.length) {
+  if (word.status === "pending") {
     const select = document.createElement("select");
     select.className = "input-field source-deck-select";
+    if (!personalDecks.length) {
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Chọn hoặc tạo deck mới";
+      select.appendChild(placeholder);
+    }
     personalDecks.forEach(deck => {
       const option = document.createElement("option");
       option.value = deck.id;
       option.textContent = deck.name;
       select.appendChild(option);
     });
+    const createOption = document.createElement("option");
+    createOption.value = "__create_new_deck__";
+    createOption.textContent = "+ Tạo deck mới và thêm từ này";
+    select.appendChild(createOption);
     const addButton = document.createElement("button");
     addButton.className = "btn btn-primary btn-sm";
     addButton.textContent = "Thêm vào deck";
-    addButton.addEventListener("click", async () => {
+    const addToSelectedDeck = async deckId => {
+      if (!deckId || deckId === "__create_new_deck__") return;
       addButton.disabled = true;
       try {
-        const card = await addCardToDeck(select.value, {
+        const card = await addCardToDeck(deckId, {
           kr: word.kr, romaja: word.romaja || "", vi: word.vi, examples: word.examples || []
         }, { sourceId: source.id, extractionId: word.id });
         if (!card) throw new Error("Không thêm được thẻ.");
         word.status = card.alreadyExists ? "already_in_deck" : "added";
-        word.deckId = select.value;
+        word.deckId = deckId;
         renderLearningSources();
         showToast(card.alreadyExists ? "Từ đã có trong deck, đã liên kết history." : "✓ Đã thêm từ vào deck");
       } catch (err) {
         showToast("⚠️ " + err.message);
         addButton.disabled = false;
       }
+    };
+    addButton.addEventListener("click", () => addToSelectedDeck(select.value));
+    select.addEventListener("change", async () => {
+      if (select.value !== "__create_new_deck__") return;
+      const previousDeckId = personalDecks[0] && personalDecks[0].id;
+      const deckName = window.prompt("Nhập tên deck mới:");
+      if (!deckName || !deckName.trim()) {
+        select.value = previousDeckId || "";
+        return;
+      }
+
+      select.disabled = true;
+      try {
+        const deck = await createPersonalDeck(deckName.trim());
+        if (!deck) throw new Error("Không tạo được deck mới.");
+        const option = document.createElement("option");
+        option.value = deck.id;
+        option.textContent = deck.name;
+        select.insertBefore(option, createOption);
+        select.value = deck.id;
+        renderDeckSelector();
+        renderDeckGrid();
+        await addToSelectedDeck(deck.id);
+      } catch (err) {
+        showToast("⚠️ " + err.message);
+        select.value = previousDeckId || "";
+      } finally {
+        select.disabled = false;
+      }
     });
     controls.append(select, addButton);
-  } else if (word.status === "pending") {
-    const hint = document.createElement("span");
-    hint.className = "hint-text";
-    hint.textContent = "Tạo deck cá nhân trong Thư viện để thêm từ.";
-    controls.appendChild(hint);
   }
 
   if (word.status === "pending") {
     const skipButton = document.createElement("button");
     skipButton.className = "btn btn-tertiary btn-sm";
-    skipButton.textContent = "Bỏ qua";
+    skipButton.textContent = "Bỏ qua lần sau";
     skipButton.addEventListener("click", async () => {
-      await updateExtractionStatus(word.id, "skipped");
-      word.status = "skipped";
-      renderLearningSources();
+      try {
+        await setExtractedWordStatus(source, word, "skipped");
+      } catch (err) {
+        showToast("⚠️ " + err.message);
+      }
     });
     controls.appendChild(skipButton);
+
+    const knownButton = document.createElement("button");
+    knownButton.className = "btn btn-secondary btn-sm";
+    knownButton.textContent = "Đã biết";
+    knownButton.title = "Lưu từ vào danh sách loại trừ cho các lần nhập sau";
+    knownButton.addEventListener("click", async () => {
+      try {
+        await setExtractedWordStatus(source, word, "known");
+      } catch (err) {
+        showToast("⚠️ " + err.message);
+      }
+    });
+    controls.appendChild(knownButton);
+  } else if (word.status === "skipped" || word.status === "known") {
+    const restoreButton = document.createElement("button");
+    restoreButton.className = "btn btn-tertiary btn-sm";
+    restoreButton.textContent = "Đưa lại vào danh sách học";
+    restoreButton.addEventListener("click", async () => {
+      try {
+        await setExtractedWordStatus(source, word, "pending");
+      } catch (err) {
+        showToast("⚠️ " + err.message);
+      }
+    });
+    controls.appendChild(restoreButton);
   }
   item.appendChild(controls);
   return item;
@@ -1631,16 +1753,18 @@ Nhận xét: <nhận xét ngắn gọn 2-3 câu bằng tiếng Việt, chỉ ra 
  * đây là lỗi tạm thời từ phía Google (model UNAVAILABLE do spike nhu cầu), thường tự hết
  * sau vài giây, không phải lỗi do API Key hay code sai.
  */
-async function callGeminiText(apiKey, prompt, retriesLeft = 4, onRetry = null) {
+async function callGeminiText(apiKey, prompt, retriesLeft = 4, onRetry = null, deadline = Date.now() + 720000) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) throw new Error("Gemini vượt quá thời gian chờ tối đa 12 phút.");
 
-  const response = await fetch(endpoint, {
+  const response = await fetchWithTimeout(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }]
     })
-  });
+  }, Math.min(720000, remainingMs), "Gemini");
 
   if (!response.ok) {
     const errText = await response.text();
@@ -1648,10 +1772,13 @@ async function callGeminiText(apiKey, prompt, retriesLeft = 4, onRetry = null) {
     if (response.status === 503 && retriesLeft > 0) {
       const attempt = 5 - retriesLeft;
       const delayMs = Math.min(15000, 2000 * (2 ** (attempt - 1)));
+      if (Date.now() + delayMs >= deadline) {
+        throw new Error("Gemini tiếp tục quá tải và đã chạm giới hạn chờ 12 phút.");
+      }
       console.warn(`[callGeminiText] Model đang quá tải (503), thử lại lần ${attempt} sau ${delayMs}ms...`);
       if (onRetry) onRetry(attempt, delayMs);
       await new Promise(resolve => setTimeout(resolve, delayMs));
-      return callGeminiText(apiKey, prompt, retriesLeft - 1, onRetry);
+      return callGeminiText(apiKey, prompt, retriesLeft - 1, onRetry, deadline);
     }
 
     throw new Error(`HTTP ${response.status} - ${errText}`);

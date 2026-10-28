@@ -16,7 +16,7 @@
 - **Thư viện (Library) & Deck cá nhân:** tab "Thư viện" **chỉ để quản lý deck** (tạo/xoá deck, thêm/sửa/xoá flashcard trong đó) — **Basic Deck** (20 từ có sẵn, chỉ xem, không sửa) và **deck cá nhân tự tạo**, lưu trên Google Sheet gắn theo tài khoản Google đã đăng nhập. **Chọn deck nào để học** lại làm ở dropdown ngay tại tab Flashcard (không làm ở Thư viện) — chọn xong, tab Điền từ và Tra cứu & AI sẽ hiện "📚 Đang học: <tên deck>" để biết đang học deck nào; đổi deck thì quay lại tab Flashcard chọn deck khác.
 - **AI hỗ trợ tạo thẻ trong deck cá nhân:** gõ từ tiếng Hàn xong ngừng gõ ~1 giây, AI tự điền phiên âm + nghĩa tiếng Việt (dùng chung Gemini API Key đã lưu ở tab "Tôi"). Mỗi thẻ có tối đa **5 slot câu ví dụ** — bấm 1 nút **"✨ Tạo 5 câu bằng AI"** để sinh cả 5 câu cùng lúc: khác chủ đề/độ dài nhau, thiên về cách dùng thực tế trong đời sống/công việc (không học thuật/giáo trình), và trộn văn phong (~60% 문어체 trang trọng, ~40% 구어체 khẩu ngữ) cho đa dạng. Không bắt buộc điền đủ 5, và có thể sửa tay từng câu sau khi AI tạo.
 - **Tab "Tôi":** nơi quản lý tài khoản/cài đặt chung — đăng nhập Google, Gemini API Key, và nút "🔧 Quét & vá dữ liệu câu ví dụ" (quét toàn bộ deck cá nhân, tự dò lại bằng AI những câu ví dụ bị thiếu/sai dữ liệu — ví dụ do được tạo trước 1 bản cập nhật đổi cấu trúc lưu trữ — và lưu lại, không cần sửa tay từng thẻ, an toàn bấm lại nhiều lần).
-- **Nguồn học & luyện dịch:** dán đoạn văn/hội thoại, AI tìm từ ngoài tất cả deck hiện có và tạo ví dụ bám nguồn; người học duyệt từng từ, chọn deck đích hoặc bỏ qua. Nguồn và danh sách từ được lưu vào history theo tài khoản. Có thể tạo hội thoại mô phỏng từ nguồn, luyện từng câu Hàn → Việt hoặc Việt → Hàn, mở đáp án và nghe tiếng Hàn bằng speech synthesis của trình duyệt (không nhận diện giọng nói).
+- **Nguồn học & luyện dịch:** dán đoạn văn/hội thoại, AI tìm từ ngoài tất cả deck hiện có và danh sách account đã đánh dấu `skipped`/`known`, tránh tạo ví dụ cho các từ đó. Người học có thể bỏ qua cho những lần nhập sau, đánh dấu đã biết, hoặc khôi phục từ đã loại; mỗi trạng thái lưu trong `Từ vựng trích xuất`. Có thể chọn deck sẵn hoặc tạo deck mới ngay từ dropdown và tự thêm từ vào đó. Nguồn và danh sách từ được lưu theo tài khoản. Có thể tạo hội thoại mô phỏng từ nguồn, luyện từng câu Hàn → Việt hoặc Việt → Hàn, mở đáp án và nghe tiếng Hàn bằng speech synthesis của trình duyệt (không nhận diện giọng nói).
 
 ## 2. Cấu trúc project
 
@@ -187,7 +187,7 @@ Khác với lỗi `404` ở trên — đây **không phải lỗi do API Key hay
 | `429` RESOURCE_EXHAUSTED | Vượt hạn mức miễn phí | Do người dùng (dùng vượt quota) |
 | `503` UNAVAILABLE | Model quá tải tạm thời | **Do Google**, không phải lỗi app |
 
-`callGeminiText()` (dùng chung cho các tính năng AI) **tự động thử lại tối đa 4 lần** khi gặp đúng lỗi `503`, chờ tăng dần 2s, 4s, 8s và tối đa 15s; nhập nguồn học cũng hiển thị tiến trình retry. Nếu vẫn lỗi sau khi thử lại, nội dung nguồn được giữ nguyên để người dùng thử lại sau. Có thể kiểm tra tình trạng dịch vụ độc lập tại `https://aistudio.google.com`.
+`callGeminiText()` (dùng chung cho các tính năng AI) **tự động thử lại tối đa 4 lần** khi gặp đúng lỗi `503`, chờ tăng dần 2s, 4s, 8s và tối đa 15s. Riêng nhập nguồn học hiển thị thời gian đã chờ, cho phép Gemini xử lý tối đa 12 phút và báo riêng giai đoạn lưu Google Apps Script. Nếu hết thời gian hoặc lỗi, nội dung nguồn được giữ nguyên để thử lại. Có thể kiểm tra tình trạng dịch vụ độc lập tại `https://aistudio.google.com`.
 
 ## 8b. Vì sao mỗi câu ví dụ cần `blankWord` riêng, và cách vá dữ liệu cũ
 
