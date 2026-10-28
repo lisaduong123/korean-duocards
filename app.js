@@ -855,10 +855,10 @@ async function handleAnalyzeSource() {
   if (content.length > 20000) return showToast("⚠️ Nội dung tối đa 20.000 ký tự");
 
   const knownWords = [...new Set(getAllDecks().flatMap(deck => deck.cards.map(card => card.kr)).filter(Boolean))];
-  const prompt = `Đọc nội dung tiếng Hàn dưới đây và tìm tối đa 30 từ hoặc cụm từ đáng học, KHÔNG có trong danh sách từ đã biết.
+  const prompt = `Đọc nội dung tiếng Hàn dưới đây và tìm tối đa 12 từ hoặc cụm từ đáng học, KHÔNG có trong danh sách từ đã biết.
 Từ tiếng Hàn có thể bị chia; hãy trả về dạng từ điển trong "kr" và đúng dạng xuất hiện trong đoạn ở "surface".
 Chỉ lấy từ/cụm thực sự có trong nguồn, ưu tiên từ hữu ích, tránh tên riêng và từ chức năng quá cơ bản.
-Mỗi từ cần romaja, nghĩa Việt ngắn, một ngữ cảnh trích nguyên văn ngắn từ nguồn và 1-2 câu ví dụ mới bám sát chủ đề/văn phong nguồn. Mỗi ví dụ gồm example, exampleVi, blankWord; blankWord phải xuất hiện nguyên dạng trong example.
+Mỗi từ cần romaja, nghĩa Việt ngắn, một ngữ cảnh trích nguyên văn ngắn từ nguồn và đúng 1 câu ví dụ mới bám sát chủ đề/văn phong nguồn. Ví dụ gồm example, exampleVi, blankWord; blankWord phải xuất hiện nguyên dạng trong example.
 Danh sách từ đã biết: ${JSON.stringify(knownWords)}
 Nguồn:
 ${content}
@@ -868,7 +868,9 @@ Trả về JSON duy nhất dạng {"words":[{"kr":"...","romaja":"...","vi":"...
   button.disabled = true;
   status.textContent = "Đang phân tích nội dung và tạo ví dụ theo ngữ cảnh...";
   try {
-    const parsed = parseGeminiJson(await callGeminiText(apiKey, prompt));
+    const parsed = parseGeminiJson(await callGeminiText(apiKey, prompt, 4, (attempt, delayMs) => {
+      status.textContent = `Gemini đang bận; tự thử lại lần ${attempt}/4 sau ${Math.ceil(delayMs / 1000)} giây...`;
+    }));
     const known = new Set(knownWords.map(normalizeKoreanWord));
     const seen = new Set();
     const words = (Array.isArray(parsed.words) ? parsed.words : []).filter(word => {
@@ -881,7 +883,7 @@ Trả về JSON duy nhất dạng {"words":[{"kr":"...","romaja":"...","vi":"...
       examples: (Array.isArray(word.examples) ? word.examples : []).filter(example =>
         example.example && example.exampleVi && example.blankWord && example.example.includes(example.blankWord)
       ).slice(0, 2)
-    })).filter(word => word.examples.length > 0);
+    })).filter(word => word.examples.length > 0).slice(0, 12);
 
     const idToken = await firebaseAuth.currentUser.getIdToken();
     const result = await callGAS({
@@ -893,7 +895,9 @@ Trả về JSON duy nhất dạng {"words":[{"kr":"...","romaja":"...","vi":"...
     status.textContent = `Đã lưu nguồn và ${result.savedCount} từ mới. Mở history bên dưới để duyệt và thêm vào deck.`;
     await loadLearningSources();
   } catch (err) {
-    status.textContent = "Không thể phân tích/lưu nội dung: " + err.message;
+    status.textContent = err.message.includes("UNAVAILABLE")
+      ? "Gemini đang quá tải sau các lần tự thử lại. Nguồn chưa được lưu; nội dung vẫn còn trong ô. Chờ ít phút rồi bấm ‘Tìm từ mới’ lại nhé."
+      : "Không thể phân tích/lưu nội dung: " + err.message;
   } finally {
     button.disabled = false;
   }
@@ -1623,11 +1627,11 @@ Nhận xét: <nhận xét ngắn gọn 2-3 câu bằng tiếng Việt, chỉ ra 
 
 /**
  * Gọi Gemini API (generateContent), trả về text thô. Dùng chung cho mọi tính năng AI trong app.
- * Tự động thử lại (tối đa 2 lần, chờ tăng dần 2s/4s) khi gặp lỗi 503 "model đang quá tải" —
+ * Tự động thử lại (tối đa 4 lần, chờ tăng dần và tối đa 15s) khi gặp lỗi 503 "model đang quá tải" —
  * đây là lỗi tạm thời từ phía Google (model UNAVAILABLE do spike nhu cầu), thường tự hết
  * sau vài giây, không phải lỗi do API Key hay code sai.
  */
-async function callGeminiText(apiKey, prompt, retriesLeft = 2) {
+async function callGeminiText(apiKey, prompt, retriesLeft = 4, onRetry = null) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   const response = await fetch(endpoint, {
@@ -1642,10 +1646,12 @@ async function callGeminiText(apiKey, prompt, retriesLeft = 2) {
     const errText = await response.text();
 
     if (response.status === 503 && retriesLeft > 0) {
-      const delayMs = (3 - retriesLeft) * 2000; // lần 1: 2s, lần 2: 4s
-      console.warn(`[callGeminiText] Model đang quá tải (503), thử lại sau ${delayMs}ms (còn ${retriesLeft} lần)...`);
+      const attempt = 5 - retriesLeft;
+      const delayMs = Math.min(15000, 2000 * (2 ** (attempt - 1)));
+      console.warn(`[callGeminiText] Model đang quá tải (503), thử lại lần ${attempt} sau ${delayMs}ms...`);
+      if (onRetry) onRetry(attempt, delayMs);
       await new Promise(resolve => setTimeout(resolve, delayMs));
-      return callGeminiText(apiKey, prompt, retriesLeft - 1);
+      return callGeminiText(apiKey, prompt, retriesLeft - 1, onRetry);
     }
 
     throw new Error(`HTTP ${response.status} - ${errText}`);

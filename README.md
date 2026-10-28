@@ -187,7 +187,7 @@ Khác với lỗi `404` ở trên — đây **không phải lỗi do API Key hay
 | `429` RESOURCE_EXHAUSTED | Vượt hạn mức miễn phí | Do người dùng (dùng vượt quota) |
 | `503` UNAVAILABLE | Model quá tải tạm thời | **Do Google**, không phải lỗi app |
 
-`callGeminiText()` (dùng chung cho AI chấm điểm, AI điền nghĩa, AI tạo câu ví dụ) **tự động thử lại tối đa 2 lần** khi gặp đúng lỗi `503` (chờ 2s rồi 4s trước mỗi lần thử lại) trước khi báo lỗi thật cho người dùng — vì lỗi này thường tự hết sau vài giây. Nếu vẫn lỗi sau khi thử lại, có thể kiểm tra độc lập bằng cách vào thẳng `https://aistudio.google.com` và thử chat với model — nếu ở đó cũng lỗi tương tự thì chắc chắn là Google đang quá tải, không liên quan đến app.
+`callGeminiText()` (dùng chung cho các tính năng AI) **tự động thử lại tối đa 4 lần** khi gặp đúng lỗi `503`, chờ tăng dần 2s, 4s, 8s và tối đa 15s; nhập nguồn học cũng hiển thị tiến trình retry. Nếu vẫn lỗi sau khi thử lại, nội dung nguồn được giữ nguyên để người dùng thử lại sau. Có thể kiểm tra tình trạng dịch vụ độc lập tại `https://aistudio.google.com`.
 
 ## 8b. Vì sao mỗi câu ví dụ cần `blankWord` riêng, và cách vá dữ liệu cũ
 
