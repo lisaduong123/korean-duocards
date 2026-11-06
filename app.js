@@ -364,7 +364,7 @@ let learningSources = [];
 let excludedSourceWords = [];
 let currentPracticeSource = null;
 let practiceLines = [];
-let practiceIndex = 0;
+let practiceGenerating = false;
 
 /* --------------------------------------------------------------------------
    4. TIỆN ÍCH CHUNG
@@ -816,8 +816,9 @@ function getAIProviderLabel() {
 
 function getAIRetryMessage(attempt, delayMs, provider) {
   if (provider === "poe-fallback") return "Gemini đang bận; chuyển sang Poe dự phòng...";
-  const providerName = provider === "poe" ? "Poe" : "Gemini";
-  return `${providerName} đang bận; tự thử lại lần ${attempt}/4 sau ${Math.ceil(delayMs / 1000)} giây.`;
+  if (provider.startsWith("gemini-model:")) return `Model Gemini đang bận; chuyển sang ${provider.slice("gemini-model:".length)}...`;
+  if (provider === "gemini") return `Mọi model Gemini đang bận; thử lại vòng ${attempt}/4 sau ${Math.ceil(delayMs / 1000)} giây.`;
+  return `Poe đang bận; tự thử lại lần ${attempt}/4 sau ${Math.ceil(delayMs / 1000)} giây.`;
 }
 
 function initMeTab() {
@@ -1234,118 +1235,207 @@ function initSourceTab() {
   document.getElementById("btnAnalyzeSource").addEventListener("click", handleAnalyzeSource);
   document.getElementById("btnRefreshSources").addEventListener("click", loadLearningSources);
   document.getElementById("btnGeneratePractice").addEventListener("click", generatePracticeConversation);
-  document.getElementById("btnRevealPractice").addEventListener("click", revealPracticeAnswer);
-  document.getElementById("btnNextPractice").addEventListener("click", nextPracticeLine);
-  document.getElementById("btnSpeakPractice").addEventListener("click", speakPracticeLine);
-  document.getElementById("practiceDirection").addEventListener("change", renderPracticeLine);
+  document.getElementById("btnRevealAllPractice").addEventListener("click", toggleRevealAllPractice);
+  document.getElementById("practiceDirection").addEventListener("change", renderPracticeDialogue);
 }
 
+/**
+ * Mở khối luyện dịch hội thoại cho 1 nguồn. Nếu nguồn đã có hội thoại lưu trên Google Sheet thì
+ * hiện ngay, không gọi AI; chỉ nguồn chưa có hội thoại mới tự gọi AI tạo lần đầu.
+ */
 function startPracticeFromSource(source) {
   currentPracticeSource = source;
   document.getElementById("sourcePracticeBlock").style.display = "block";
   document.getElementById("practiceSourceTitle").textContent = source.title;
-  document.getElementById("practiceStatus").textContent = "Tạo một hội thoại ngắn dựa trên chủ đề và cách dùng trong nguồn.";
   document.getElementById("sourcePracticeBlock").scrollIntoView({ behavior: "smooth", block: "start" });
-  generatePracticeConversation();
+  practiceLines = Array.isArray(source.dialogue) ? source.dialogue : [];
+  renderPracticeDialogue();
+  if (practiceLines.length) {
+    document.getElementById("practiceStatus").textContent = "Hội thoại đã lưu. Bấm \"Tạo hội thoại mới\" nếu muốn đổi bài.";
+  } else {
+    generatePracticeConversation();
+  }
+}
+
+/** Prompt tạo hội thoại: bắt buộc dùng từ vựng của nguồn và bắt chước văn phong, kính ngữ, vai nói của nguồn. */
+function buildPracticePrompt(source) {
+  const words = Array.isArray(source.words) ? source.words : [];
+  const learningWords = words.filter(word => word.status !== "skipped" && word.status !== "known");
+  const targetWords = (learningWords.length ? learningWords : words)
+    .slice(0, 20)
+    .map(word => ({ kr: word.kr, vi: word.vi }));
+  const content = source.content || "";
+  const excerpt = content.length > 4000 ? content.slice(0, 4000) + "\n..." : content;
+  const wordRule = targetWords.length
+    ? `- BẮT BUỘC dùng tự nhiên càng nhiều càng tốt (ít nhất 2/3) các từ vựng mục tiêu bên dưới, được chia đuôi/biến đổi theo ngữ pháp. Mỗi từ dùng đúng nghĩa đã cho.
+Từ vựng mục tiêu: ${JSON.stringify(targetWords)}`
+    : "- Dùng lại các từ vựng đáng học xuất hiện trong nguồn.";
+
+  return `Bạn là giáo viên tiếng Hàn. Viết MỘT hội thoại mới để người Việt luyện dịch nói Việt ⇄ Hàn.
+Yêu cầu:
+- 8-12 lượt lời, luân phiên tự nhiên giữa các nhân vật.
+${wordRule}
+- Ưu tiên bắt chước nguồn: cùng mức kính ngữ (합니다체/해요체/반말), cùng quan hệ giữa các nhân vật, cùng bối cảnh, chủ đề, độ dài câu và cách nói. Nếu nguồn là đoạn văn chứ không phải hội thoại, chuyển thành hội thoại quanh cùng chủ đề với độ trang trọng tương đương.
+- Không chép nguyên văn câu trong nguồn.
+- "vi" là bản dịch tiếng Việt tự nhiên, sát nghĩa, giữ sắc thái lịch sự hay thân mật để người học dịch ngược sang tiếng Hàn được.
+- "speaker" là tên vai ngắn, ví dụ A/B hoặc vai trong nguồn.
+Nguồn:
+${excerpt}
+
+Trả về JSON duy nhất dạng {"lines":[{"speaker":"A","ko":"...","vi":"..."}]}.`;
+}
+
+function normalizePracticeLines(lines) {
+  return (Array.isArray(lines) ? lines : [])
+    .map(line => ({
+      speaker: String(line?.speaker || "").trim().slice(0, 30),
+      ko: String(line?.ko || "").trim(),
+      vi: String(line?.vi || "").trim()
+    }))
+    .filter(line => line.ko && line.vi)
+    .slice(0, 16);
 }
 
 async function generatePracticeConversation() {
-  if (!currentPracticeSource) return showToast("Hãy chọn nguồn học trước");
+  const source = currentPracticeSource;
+  if (!source) return showToast("Hãy chọn nguồn học trước");
+  if (practiceGenerating) return showToast("⚠️ AI đang tạo hội thoại, hãy chờ xong đã");
   const apiKey = getAIKeyForCurrentProvider();
   if (!apiKey) return showToast("⚠️ " + getAIKeyErrorMessage());
   const button = document.getElementById("btnGeneratePractice");
   const status = document.getElementById("practiceStatus");
+  const setStatus = text => {
+    if (currentPracticeSource === source) status.textContent = text;
+  };
+  practiceGenerating = true;
   button.disabled = true;
   const startedAt = Date.now();
   let retryMessage = "";
-  status.textContent = `${getAIProviderLabel()} đang tạo hội thoại... Đã chờ 0 giây.`;
+  setStatus(`${getAIProviderLabel()} đang tạo hội thoại... Đã chờ 0 giây.`);
   const progressTimer = setInterval(() => {
     const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
-    status.textContent = retryMessage
+    setStatus(retryMessage
       ? `${retryMessage} Đã chờ ${elapsedSeconds} giây.`
-      : `${getAIProviderLabel()} đang tạo hội thoại... Đã chờ ${elapsedSeconds} giây.`;
+      : `${getAIProviderLabel()} đang tạo hội thoại... Đã chờ ${elapsedSeconds} giây.`);
   }, 5000);
   try {
-    const prompt = `Dựa trên đoạn tiếng Hàn bên dưới, tạo một hội thoại mô phỏng mới gồm 6-8 lượt lời tự nhiên, giữ chủ đề, tình huống và sắc thái giao tiếp tương tự nhưng không chép nguyên văn toàn bộ nguồn. Dùng từ vựng thực tế, mức độ sơ-trung cấp. Mỗi lượt có câu tiếng Hàn và bản dịch tiếng Việt chính xác.
-Nguồn:
-${currentPracticeSource.content}
-
-Trả về JSON duy nhất dạng {"lines":[{"ko":"...","vi":"...","speaker":"A"}]}.`;
-    const parsed = parseGeminiJson(await callGeminiText(apiKey, prompt, 4, (attempt, delayMs, provider) => {
+    const rawText = await callGeminiText(apiKey, buildPracticePrompt(source), 4, (attempt, delayMs, provider) => {
       retryMessage = getAIRetryMessage(attempt, delayMs, provider);
-      status.textContent = retryMessage;
-    }));
-    practiceLines = (Array.isArray(parsed.lines) ? parsed.lines : [])
-      .filter(line => line.ko && line.vi)
-      .slice(0, 12);
-    if (!practiceLines.length) throw new Error("AI chưa tạo được câu luyện hợp lệ.");
-    practiceIndex = 0;
-    document.getElementById("btnRevealPractice").disabled = false;
-    document.getElementById("btnNextPractice").disabled = false;
-    document.getElementById("btnSpeakPractice").disabled = false;
-    status.textContent = `${practiceLines.length} lượt hội thoại đã sẵn sàng.`;
-    renderPracticeLine();
+      setStatus(retryMessage);
+    }, undefined, { json: true });
+    const lines = normalizePracticeLines(parseGeminiJson(rawText).lines);
+    if (!lines.length) throw new Error("AI chưa tạo được câu luyện hợp lệ.");
+
+    source.dialogue = lines;
+    if (currentPracticeSource === source) {
+      practiceLines = lines;
+      renderPracticeDialogue();
+    }
+    clearInterval(progressTimer);
+    setStatus(`${lines.length} lượt hội thoại đã sẵn sàng. Đang lưu vào Google Sheet...`);
+    try {
+      if (!firebaseAuth.currentUser) throw new Error("Chưa đăng nhập Google.");
+      const idToken = await firebaseAuth.currentUser.getIdToken();
+      const result = await callGAS({ mode: "saveSourceDialogue", idToken, sourceId: source.id, lines });
+      if (!result.success) throw new Error(result.error || "Không lưu được hội thoại.");
+      setStatus(`${lines.length} lượt hội thoại đã sẵn sàng và đã lưu cho lần sau.`);
+    } catch (saveErr) {
+      setStatus(`${lines.length} lượt hội thoại đã sẵn sàng nhưng chưa lưu được vào Google Sheet; lần sau mở lại sẽ phải tạo mới. Nếu vừa cập nhật code, hãy deploy lại Google Apps Script. Chi tiết: ${saveErr.message}`);
+    }
   } catch (err) {
-    status.textContent = isTemporaryAIError(err)
+    setStatus(isTemporaryAIError(err)
       ? "AI đang quá tải hoặc phản hồi quá lâu. Chưa tạo được hội thoại; hãy thử lại sau. Chi tiết: " + err.message
-      : "Không tạo được hội thoại: " + err.message;
+      : "Không tạo được hội thoại: " + err.message);
   } finally {
     clearInterval(progressTimer);
+    practiceGenerating = false;
     button.disabled = false;
   }
 }
 
-function renderPracticeLine() {
-  const sentence = document.getElementById("practiceSentence");
-  const answer = document.getElementById("practiceAnswer");
+function getPracticeAnswerLabel() {
+  return document.getElementById("practiceDirection").value === "vi-ko" ? "tiếng Hàn" : "tiếng Việt";
+}
+
+/** Hiện cả hội thoại theo ngôn ngữ đề bài; đáp án của từng câu ẩn cho tới khi chạm vào câu đó. */
+function renderPracticeDialogue() {
+  const list = document.getElementById("practiceDialogue");
   const direction = document.getElementById("practiceDirection").value;
-  answer.style.display = "none";
-  answer.textContent = "";
+  const revealAllButton = document.getElementById("btnRevealAllPractice");
+  list.replaceChildren();
+  revealAllButton.dataset.revealed = "false";
+  revealAllButton.textContent = `Hiện tất cả ${getPracticeAnswerLabel()}`;
+  revealAllButton.disabled = !practiceLines.length;
   if (!practiceLines.length) {
-    sentence.textContent = "Chọn một nguồn học để bắt đầu.";
+    const empty = document.createElement("li");
+    empty.className = "practice-empty hint-text";
+    empty.textContent = "Chưa có hội thoại cho nguồn này.";
+    list.appendChild(empty);
     return;
   }
-  if (practiceIndex >= practiceLines.length) {
-    sentence.textContent = "🎉 Bạn đã hoàn thành hội thoại.";
-    document.getElementById("btnRevealPractice").disabled = true;
-    document.getElementById("btnSpeakPractice").disabled = true;
-    document.getElementById("btnNextPractice").textContent = "Làm lại";
-    return;
+  practiceLines.forEach(line => list.appendChild(renderPracticeLine(line, direction)));
+}
+
+function renderPracticeLine(line, direction) {
+  const item = document.createElement("li");
+  item.className = "practice-line";
+  item.dataset.direction = direction;
+
+  const main = document.createElement("button");
+  main.type = "button";
+  main.className = "practice-line-main";
+  main.setAttribute("aria-expanded", "false");
+  main.title = "Chạm để hiện hoặc ẩn đáp án";
+  if (line.speaker) {
+    const speaker = document.createElement("span");
+    speaker.className = "practice-speaker";
+    speaker.textContent = line.speaker;
+    main.appendChild(speaker);
   }
-  const line = practiceLines[practiceIndex];
-  const displayedText = direction === "ko-vi" ? line.ko : line.vi;
-  sentence.textContent = `${practiceIndex + 1}/${practiceLines.length}${line.speaker ? ` · ${line.speaker}` : ""}  ${displayedText}`;
-  document.getElementById("btnRevealPractice").disabled = false;
-  document.getElementById("btnSpeakPractice").disabled = direction !== "ko-vi";
-  document.getElementById("btnNextPractice").textContent = practiceIndex === practiceLines.length - 1 ? "Hoàn tất" : "Câu tiếp theo →";
+  const promptText = document.createElement("span");
+  promptText.className = "practice-prompt";
+  promptText.lang = direction === "vi-ko" ? "vi" : "ko";
+  promptText.textContent = direction === "vi-ko" ? line.vi : line.ko;
+  const answer = document.createElement("span");
+  answer.className = "practice-line-answer";
+  answer.lang = direction === "vi-ko" ? "ko" : "vi";
+  answer.textContent = direction === "vi-ko" ? line.ko : line.vi;
+  answer.hidden = true;
+  main.append(promptText, answer);
+  main.addEventListener("click", () => setPracticeLineRevealed(item, answer.hidden));
+
+  const speak = document.createElement("button");
+  speak.type = "button";
+  speak.className = "practice-speak";
+  speak.textContent = "🔊";
+  speak.title = "Nghe câu tiếng Hàn";
+  speak.setAttribute("aria-label", "Nghe câu tiếng Hàn");
+  speak.hidden = direction === "vi-ko";
+  speak.addEventListener("click", () => speakKoreanText(line.ko));
+
+  item.append(main, speak);
+  return item;
 }
 
-function revealPracticeAnswer() {
-  if (!practiceLines[practiceIndex]) return;
-  const line = practiceLines[practiceIndex];
-  const direction = document.getElementById("practiceDirection").value;
-  const answer = document.getElementById("practiceAnswer");
-  answer.textContent = direction === "ko-vi" ? line.vi : line.ko;
-  answer.style.display = "block";
+function setPracticeLineRevealed(item, revealed) {
+  item.classList.toggle("revealed", revealed);
+  item.querySelector(".practice-line-answer").hidden = !revealed;
+  item.querySelector(".practice-line-main").setAttribute("aria-expanded", String(revealed));
+  if (item.dataset.direction === "vi-ko") item.querySelector(".practice-speak").hidden = !revealed;
 }
 
-function nextPracticeLine() {
-  if (practiceIndex >= practiceLines.length) {
-    practiceIndex = 0;
-    document.getElementById("btnRevealPractice").disabled = false;
-    document.getElementById("btnSpeakPractice").disabled = false;
-    document.getElementById("btnNextPractice").textContent = "Câu tiếp theo →";
-  } else {
-    practiceIndex += 1;
-  }
-  renderPracticeLine();
+function toggleRevealAllPractice() {
+  const button = document.getElementById("btnRevealAllPractice");
+  const reveal = button.dataset.revealed !== "true";
+  document.querySelectorAll("#practiceDialogue .practice-line").forEach(item => setPracticeLineRevealed(item, reveal));
+  button.dataset.revealed = String(reveal);
+  button.textContent = `${reveal ? "Ẩn" : "Hiện"} tất cả ${getPracticeAnswerLabel()}`;
 }
 
-function speakPracticeLine() {
-  const line = practiceLines[practiceIndex];
-  if (!line || !window.speechSynthesis) return;
+function speakKoreanText(text) {
+  if (!text || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(line.ko);
+  const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = "ko-KR";
   window.speechSynthesis.speak(utterance);
 }
@@ -1852,7 +1942,14 @@ function isTemporaryAIError(error) {
   return /HTTP (429|502|503|529)|UNAVAILABLE|overload|timeout|timed out|không phản hồi|vượt quá thời gian/i.test(error.message || "");
 }
 
-async function callGeminiText(apiKey, prompt, retriesLeft = 4, onRetry = null, deadline = Date.now() + 720000) {
+/**
+ * Danh sách model Gemini thử lần lượt. Lỗi 503 nghĩa là RIÊNG model đó đang quá tải phía Google,
+ * nên khi gặp lỗi tạm thời app chuyển ngay sang model kế tiếp (cùng API key) thay vì chờ rồi gọi lại
+ * đúng model đang quá tải. Model không dùng được với key (404) cũng được bỏ qua để thử model sau.
+ */
+const GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest"];
+
+async function callGeminiText(apiKey, prompt, retriesLeft = 4, onRetry = null, deadline = Date.now() + 720000, options = {}) {
   const settings = getAISettings();
   if (settings.provider === "poe") {
     return callPoeText(settings.poeKey, settings.poeModel, prompt, onRetry, deadline);
@@ -1866,7 +1963,8 @@ async function callGeminiText(apiKey, prompt, retriesLeft = 4, onRetry = null, d
         prompt,
         4,
         onRetry,
-        Math.min(deadline, Date.now() + 90000)
+        Math.min(deadline, Date.now() + 90000),
+        options
       );
     } catch (err) {
       if (!isTemporaryAIError(err)) throw err;
@@ -1875,43 +1973,70 @@ async function callGeminiText(apiKey, prompt, retriesLeft = 4, onRetry = null, d
     }
   }
 
-  return callGeminiProviderText(apiKey, prompt, retriesLeft, onRetry, deadline);
+  return callGeminiProviderText(apiKey, prompt, retriesLeft, onRetry, deadline, options);
 }
 
-async function callGeminiProviderText(apiKey, prompt, retriesLeft, onRetry, deadline) {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(apiKey)}`;
+/**
+ * Mỗi vòng thử lần lượt các model trong GEMINI_MODELS. Chỉ khi mọi model đều quá tải mới chờ
+ * (2s, 4s, 8s, tối đa 15s) rồi bắt đầu vòng mới, tối đa `retriesLeft` vòng thêm.
+ */
+async function callGeminiProviderText(apiKey, prompt, retriesLeft, onRetry, deadline, options = {}) {
+  let lastError = null;
+  for (let round = 0; round <= retriesLeft; round++) {
+    for (let index = 0; index < GEMINI_MODELS.length; index++) {
+      const model = GEMINI_MODELS[index];
+      try {
+        return await requestGeminiModel(apiKey, model, prompt, deadline, options);
+      } catch (err) {
+        lastError = err;
+        const modelUnavailable = err.status === 404;
+        if (!modelUnavailable && !isTemporaryAIError(err)) throw err;
+        const nextModel = GEMINI_MODELS[index + 1];
+        if (nextModel) {
+          console.warn(`[Gemini] ${model} lỗi (${err.message.slice(0, 120)}), chuyển sang ${nextModel}...`);
+          if (onRetry && !modelUnavailable) onRetry(round + 1, 0, `gemini-model:${nextModel}`);
+        }
+      }
+    }
+
+    if (round === retriesLeft) break;
+    const attempt = round + 1;
+    const delayMs = Math.min(15000, 2000 * (2 ** round));
+    if (Date.now() + delayMs >= deadline) break;
+    console.warn(`[Gemini] Mọi model đều bận, thử lại vòng ${attempt} sau ${delayMs}ms...`);
+    if (onRetry) onRetry(attempt, delayMs, "gemini");
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+  }
+  throw lastError || new Error("Gemini vượt quá thời gian chờ tối đa.");
+}
+
+async function requestGeminiModel(apiKey, model, prompt, deadline, options = {}) {
   const remainingMs = deadline - Date.now();
-  if (remainingMs <= 0) throw new Error("Gemini vượt quá thời gian chờ tối đa 12 phút.");
+  if (remainingMs <= 0) throw new Error("Gemini vượt quá thời gian chờ tối đa.");
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const body = { contents: [{ parts: [{ text: prompt }] }] };
+  if (options.json) body.generationConfig = { responseMimeType: "application/json" };
 
   const response = await fetchWithTimeout(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }]
-    })
-  }, Math.min(720000, remainingMs), "Gemini");
+    body: JSON.stringify(body)
+  }, Math.min(720000, remainingMs), `Gemini (${model})`);
 
   if (!response.ok) {
     const errText = await response.text();
-
-    if ([429, 502, 503, 529].includes(response.status) && retriesLeft > 0) {
-      const attempt = 5 - retriesLeft;
-      const delayMs = Math.min(15000, 2000 * (2 ** (attempt - 1)));
-      if (Date.now() + delayMs >= deadline) {
-        throw new Error("Gemini tiếp tục quá tải và đã chạm giới hạn chờ 12 phút.");
-      }
-      console.warn(`[Gemini] Lỗi tạm thời HTTP ${response.status}, thử lại lần ${attempt} sau ${delayMs}ms...`);
-      if (onRetry) onRetry(attempt, delayMs, "gemini");
-      await new Promise(resolve => setTimeout(resolve, delayMs));
-      return callGeminiProviderText(apiKey, prompt, retriesLeft - 1, onRetry, deadline);
-    }
-
-    throw new Error(`HTTP ${response.status} - ${errText}`);
+    const error = new Error(`HTTP ${response.status} (${model}) - ${errText}`);
+    error.status = response.status;
+    throw error;
   }
 
   const data = await response.json();
-  return data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-    "Không nhận được phản hồi hợp lệ từ Gemini API.";
+  const text = data?.candidates?.[0]?.content?.parts?.map(part => part.text || "").join("");
+  if (!text) {
+    const reason = data?.candidates?.[0]?.finishReason || data?.promptFeedback?.blockReason || "không rõ lý do";
+    throw new Error(`Gemini (${model}) không trả về nội dung (${reason}).`);
+  }
+  return text;
 }
 
 async function callPoeText(apiKey, model, prompt, onRetry = null, deadline = Date.now() + 720000, retriesLeft = 4) {

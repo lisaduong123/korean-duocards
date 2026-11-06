@@ -219,24 +219,22 @@
           <div class="card-block source-practice-block" id="sourcePracticeBlock" style="display:none;">
             <div class="source-history-heading">
               <div>
-                <h2 class="block-title">🗣️ Luyện dịch từng câu</h2>
+                <h2 class="block-title">🗣️ Luyện dịch hội thoại</h2>
                 <p class="hint-text" id="practiceSourceTitle"></p>
               </div>
               <div class="source-practice-controls">
                 <label class="sr-only" for="practiceDirection">Chiều luyện dịch</label>
                 <select class="input-field" id="practiceDirection">
-                  <option value="ko-vi">Hàn → Việt</option>
                   <option value="vi-ko">Việt → Hàn</option>
+                  <option value="ko-vi">Hàn → Việt</option>
                 </select>
-                <button class="btn btn-secondary btn-sm" id="btnGeneratePractice">Tạo hội thoại</button>
+                <button class="btn btn-secondary btn-sm" id="btnGeneratePractice">Tạo hội thoại mới</button>
               </div>
             </div>
-            <div id="practiceSentence" class="practice-sentence">Chọn một nguồn học để bắt đầu.</div>
-            <div id="practiceAnswer" class="practice-answer" style="display:none;"></div>
+            <p class="hint-text practice-hint">Đọc từng câu, tự nói bản dịch, rồi chạm vào câu để xem đáp án.</p>
+            <ol id="practiceDialogue" class="practice-dialogue"></ol>
             <div class="source-practice-actions">
-              <button class="btn btn-secondary" id="btnSpeakPractice" disabled>🔊 Nghe</button>
-              <button class="btn btn-secondary" id="btnRevealPractice" disabled>Hiện đáp án</button>
-              <button class="btn btn-primary" id="btnNextPractice" disabled>Câu tiếp theo →</button>
+              <button class="btn btn-primary" id="btnRevealAllPractice" disabled>Hiện tất cả tiếng Hàn</button>
             </div>
             <p class="hint-text" id="practiceStatus"></p>
           </div>

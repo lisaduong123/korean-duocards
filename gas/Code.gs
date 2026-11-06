@@ -417,6 +417,7 @@ function doPost(e) {
     if (payload.mode === "listLearningSources") return handleListLearningSources(payload);
     if (payload.mode === "updateExtraction") return handleUpdateExtraction(payload);
     if (payload.mode === "deleteLearningSource") return handleDeleteLearningSource(payload);
+    if (payload.mode === "saveSourceDialogue") return handleSaveSourceDialogue(payload);
 
     const result = processText(payload);
     return jsonResponse(result);
@@ -507,7 +508,7 @@ function handleProgressSync(payload) {
 const DECKS_HEADER = ["Email", "DeckID", "Tên Deck", "CardID", "Hàn", "Romaja", "Việt", "Ví Dụ (JSON)", "SourceID", "ExtractionID"];
 const SOURCES_SHEET = "Nguồn học";
 const EXTRACTED_VOCAB_SHEET = "Từ vựng trích xuất";
-const SOURCES_HEADER = ["SourceID", "Email", "Tiêu đề", "Nội dung", "Ngày tạo"];
+const SOURCES_HEADER = ["SourceID", "Email", "Tiêu đề", "Nội dung", "Ngày tạo", "Hội thoại (JSON)"];
 const EXTRACTED_VOCAB_HEADER = ["ExtractionID", "SourceID", "Email", "Từ gốc", "Romaja", "Nghĩa", "Dạng trong nguồn", "Ngữ cảnh", "Ví dụ (JSON)", "Trạng thái", "DeckID", "CardID", "Ngày tạo"];
 
 function getOrCreateDecksSheet() {
@@ -720,7 +721,7 @@ function handleSaveLearningSource(payload) {
   const sourceId = Utilities.getUuid();
   const sourceSheet = getOrCreateLearningSheet(SOURCES_SHEET, SOURCES_HEADER);
   const vocabSheet = getOrCreateLearningSheet(EXTRACTED_VOCAB_SHEET, EXTRACTED_VOCAB_HEADER);
-  sourceSheet.appendRow([sourceId, user.email, title, content, new Date()]);
+  sourceSheet.appendRow([sourceId, user.email, title, content, new Date(), ""]);
 
   const createdAt = new Date();
   const rows = words.map(word => [
@@ -756,9 +757,43 @@ function handleListLearningSources(payload) {
   });
 
   const sources = sourceRows.map(row => ({
-    id: row[0], title: row[2], content: row[3], createdAt: row[4], words: vocabBySource[row[0]] || []
+    id: row[0], title: row[2], content: row[3], createdAt: row[4], dialogue: parseDialogueJson(row[5]), words: vocabBySource[row[0]] || []
   })).reverse();
   return jsonResponse({ success: true, sources, excludedWords });
+}
+
+/** Chuẩn hoá hội thoại luyện dịch: tối đa 16 lượt, mỗi lượt cần đủ câu Hàn và câu Việt. */
+function sanitizeDialogue(lines) {
+  if (!Array.isArray(lines)) return [];
+  return lines
+    .map(line => ({ speaker: CLEAN(line && line.speaker).slice(0, 30), ko: CLEAN(line && line.ko), vi: CLEAN(line && line.vi) }))
+    .filter(line => line.ko && line.vi)
+    .slice(0, 16);
+}
+
+/** Parse cột "Hội thoại (JSON)" của sheet Nguồn học; trả về [] nếu trống/hỏng (nguồn cũ chưa có hội thoại). */
+function parseDialogueJson(raw) {
+  if (!raw) return [];
+  try {
+    return sanitizeDialogue(JSON.parse(raw));
+  } catch (err) {
+    return [];
+  }
+}
+
+/** Lưu (ghi đè) hội thoại luyện dịch AI đã tạo cho 1 nguồn học, để lần sau mở ra là có ngay. */
+function handleSaveSourceDialogue(payload) {
+  const user = verifyFirebaseIdToken(payload.idToken);
+  if (!user) return jsonResponse({ success: false, error: "Xác thực Google không hợp lệ hoặc đã hết hạn." });
+  const lines = sanitizeDialogue(payload.lines);
+  if (!lines.length) return jsonResponse({ success: false, error: "Hội thoại trống hoặc không hợp lệ." });
+
+  const sheet = getOrCreateLearningSheet(SOURCES_SHEET, SOURCES_HEADER);
+  const rowIndex = readRowsWithHeader(sheet, SOURCES_HEADER)
+    .findIndex(row => row[0] === payload.sourceId && row[1] === user.email);
+  if (rowIndex < 0) return jsonResponse({ success: false, error: "Không tìm thấy nguồn học." });
+  sheet.getRange(rowIndex + 2, 6).setValue(JSON.stringify(lines));
+  return jsonResponse({ success: true, lines });
 }
 
 function handleUpdateExtraction(payload) {
