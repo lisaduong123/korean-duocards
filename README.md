@@ -12,10 +12,11 @@
 - **Điền từ (Cloze test):** chọn từ đúng để điền vào chỗ trống; lựa chọn nhiễu được ưu tiên cùng dạng chia, độ dài và âm tiết đầu để luyện phân biệt từ trong ngữ cảnh.
 - **Tra cứu từ vựng:** tìm kiếm nhanh theo tiếng Hàn / romaja / tiếng Việt.
 - **AI chấm điểm bản dịch:** dán Gemini API Key của riêng bạn để AI chấm điểm bản dịch Hàn → Việt. Key chỉ lưu trong `localStorage` của trình duyệt người dùng đó, ai dùng key của người ấy — không lộ, không dùng chung.
+- **Chọn AI provider:** dùng Gemini, Poe, hoặc Gemini với Poe làm dự phòng khi Gemini gặp lỗi tạm thời/timeout. Poe dùng OpenAI-compatible Chat Completions; model ID và Poe API Key được nhập trong tab Tôi và chỉ lưu trong `localStorage` của trình duyệt. Không hard-code API key vào repo public.
 - **Đăng nhập Google (Firebase Auth) & đồng bộ tiến độ chung:** đăng nhập bằng Google — phiên đăng nhập bền, tự làm mới ngầm, không mất khi refresh trang — để tự động lưu tiến độ học (đã nhớ/chưa nhớ) lên 1 Google Sheet dùng chung, thông qua Google Apps Script Web App (`gas/Code.gs`).
 - **Thư viện (Library) & Deck cá nhân:** tab "Thư viện" **chỉ để quản lý deck** (tạo/xoá deck, thêm/sửa/xoá flashcard trong đó) — **Basic Deck** (20 từ có sẵn, chỉ xem, không sửa) và **deck cá nhân tự tạo**, lưu trên Google Sheet gắn theo tài khoản Google đã đăng nhập. **Chọn deck nào để học** lại làm ở dropdown ngay tại tab Flashcard (không làm ở Thư viện) — chọn xong, tab Điền từ và Tra cứu & AI sẽ hiện "📚 Đang học: <tên deck>" để biết đang học deck nào; đổi deck thì quay lại tab Flashcard chọn deck khác.
-- **AI hỗ trợ tạo thẻ trong deck cá nhân:** gõ từ tiếng Hàn xong ngừng gõ ~1 giây, AI tự điền phiên âm + nghĩa tiếng Việt (dùng chung Gemini API Key đã lưu ở tab "Tôi"). Mỗi thẻ có tối đa **5 slot câu ví dụ** — bấm 1 nút **"✨ Tạo 5 câu bằng AI"** để sinh cả 5 câu cùng lúc: khác chủ đề/độ dài nhau, thiên về cách dùng thực tế trong đời sống/công việc (không học thuật/giáo trình), và trộn văn phong (~60% 문어체 trang trọng, ~40% 구어체 khẩu ngữ) cho đa dạng. Không bắt buộc điền đủ 5, và có thể sửa tay từng câu sau khi AI tạo.
-- **Tab "Tôi":** nơi quản lý tài khoản/cài đặt chung — đăng nhập Google, Gemini API Key, và nút "🔧 Quét & vá dữ liệu câu ví dụ" (quét toàn bộ deck cá nhân, tự dò lại bằng AI những câu ví dụ bị thiếu/sai dữ liệu — ví dụ do được tạo trước 1 bản cập nhật đổi cấu trúc lưu trữ — và lưu lại, không cần sửa tay từng thẻ, an toàn bấm lại nhiều lần).
+- **AI hỗ trợ tạo thẻ trong deck cá nhân:** gõ từ tiếng Hàn xong ngừng gõ ~1 giây, AI tự điền phiên âm + nghĩa tiếng Việt. Mỗi thẻ có tối đa **5 slot câu ví dụ** — bấm 1 nút **"✨ Tạo 5 câu bằng AI"** để sinh cả 5 câu cùng lúc: khác chủ đề/độ dài nhau, thiên về cách dùng thực tế trong đời sống/công việc (không học thuật/giáo trình), và trộn văn phong (~60% 문어체 trang trọng, ~40% 구어체 khẩu ngữ) cho đa dạng. Không bắt buộc điền đủ 5, và có thể sửa tay từng câu sau khi AI tạo. Cả hai tính năng dùng provider và API key đang chọn ở tab "Tôi"; lỗi quá tải tạm thời được tự thử lại và có thể cấu hình Poe làm dự phòng.
+- **Tab "Tôi":** nơi quản lý tài khoản/cài đặt chung — đăng nhập Google, chọn Gemini/Poe, lưu API key tương ứng, và nút "🔧 Quét & vá dữ liệu câu ví dụ" (quét toàn bộ deck cá nhân, tự dò lại bằng AI những câu ví dụ bị thiếu/sai dữ liệu — ví dụ do được tạo trước 1 bản cập nhật đổi cấu trúc lưu trữ — và lưu lại, không cần sửa tay từng thẻ, an toàn bấm lại nhiều lần).
 - **Nguồn học & luyện dịch:** dán đoạn văn/hội thoại, AI tìm từ ngoài tất cả deck hiện có và danh sách account đã đánh dấu `skipped`/`known`, tránh tạo ví dụ cho các từ đó. Người học có thể bỏ qua cho những lần nhập sau, đánh dấu đã biết, hoặc khôi phục từ đã loại; mỗi trạng thái lưu trong `Từ vựng trích xuất`. Có thể chọn deck sẵn hoặc tạo deck mới ngay từ dropdown và tự thêm từ vào đó. Nguồn và danh sách từ được lưu theo tài khoản. Có thể tạo hội thoại mô phỏng từ nguồn, luyện từng câu Hàn → Việt hoặc Việt → Hàn, mở đáp án và nghe tiếng Hàn bằng speech synthesis của trình duyệt (không nhận diện giọng nói).
 
 ## 2. Cấu trúc project
@@ -131,7 +132,7 @@ Mở trực tiếp `index.html` bằng trình duyệt, hoặc dùng 1 static ser
 ## 6. Dữ liệu lưu ở đâu
 
 - Tiến độ SRS cá nhân (không cần đăng nhập, kể cả thẻ trong deck cá nhân): `localStorage` trên trình duyệt của mỗi người.
-- Gemini API Key: `localStorage`, riêng theo từng người dùng, không gửi lên đâu ngoài Google Gemini API.
+- Gemini/Poe API Key: `localStorage`, riêng theo từng trình duyệt; chỉ gửi tới provider đang chọn (Poe cũng được dùng khi Gemini chuyển sang chế độ dự phòng).
 - Tiến độ đồng bộ chung của Basic Deck (chỉ khi đã đăng nhập Google): Google Sheet, sheet `Tiến Độ Học`.
 - Deck cá nhân + flashcard tự tạo (chỉ khi đã đăng nhập Google): Google Sheet, sheet `Decks Cá Nhân`.
 - Nguồn người học nhập và từ AI đề xuất (chỉ khi đã đăng nhập Google): các sheet `Nguồn học` và `Từ vựng trích xuất`; thẻ import có liên kết `SourceID`/`ExtractionID`.
@@ -166,11 +167,11 @@ Bảng phẳng, mỗi dòng là 1 thẻ; riêng deck rỗng có 1 "dòng đánh 
 - Repo này là **public** — không bao giờ hardcode Gemini API Key hoặc bất kỳ secret nào tốn phí vào code, vì ai cũng đọc được trên GitHub. `firebaseConfig` trong `app.js` thì an toàn để public (Google thiết kế các giá trị này không phải bí mật).
 - GAS Web App URL được hardcode có chủ đích (không phải secret tốn phí), nhưng vì endpoint này công khai, mọi request ghi dữ liệu đều được kiểm tra qua `verifyFirebaseIdToken()` trước khi ghi Sheet.
 - `verifyFirebaseIdToken()` xác minh ID token qua Firebase Identity Toolkit trước khi tin cậy email; GAS cần quyền `script.external_request` trong `gas/appsscript.json`. Sau khi deploy, cần cấp quyền UrlFetchApp trong Apps Script nếu Google yêu cầu.
-- Nội dung nguồn và danh sách từ được gửi tới Gemini bằng API key do người dùng cung cấp. Nội dung được lưu vào Sheet theo tài khoản đã đăng nhập; chỉ nhập tài liệu mà bạn có quyền lưu và xử lý qua dịch vụ AI.
+- Nội dung nguồn và yêu cầu AI được gửi tới provider đang chọn (Gemini hoặc Poe) bằng API key do người dùng cung cấp; khi bật dự phòng, yêu cầu cũng được gửi tới Poe nếu Gemini tạm lỗi. Nội dung được lưu vào Sheet theo tài khoản đã đăng nhập; chỉ nhập tài liệu mà bạn có quyền lưu và xử lý qua dịch vụ AI.
 
 ## 8. Model Gemini đang dùng & lỗi 404 model not found
 
-`app.js` gọi Gemini API bằng model **`gemini-flash-latest`** (trong hàm `callGeminiGrading`) thay vì ghi cứng 1 phiên bản cụ thể (vd `gemini-1.5-flash`, `gemini-2.5-flash`). Lý do: Google thường xuyên ngừng hỗ trợ (deprecate) các phiên bản model cụ thể, khiến API trả lỗi `404 NOT_FOUND`. Dùng alias `-latest` giúp code luôn tự trỏ vào bản flash mới nhất Google khuyến nghị, không cần sửa code mỗi lần Google đổi model mặc định.
+`app.js` gọi Gemini API bằng model **`gemini-flash-latest`** (trong hàm `callGeminiProviderText`) thay vì ghi cứng 1 phiên bản cụ thể (vd `gemini-1.5-flash`, `gemini-2.5-flash`). Lý do: Google thường xuyên ngừng hỗ trợ (deprecate) các phiên bản model cụ thể, khiến API trả lỗi `404 NOT_FOUND`. Dùng alias `-latest` giúp code luôn tự trỏ vào bản flash mới nhất Google khuyến nghị, không cần sửa code mỗi lần Google đổi model mặc định.
 
 Nếu sau này vẫn gặp lỗi `404` với thông báo kiểu "model ... is not found" hoặc "no longer available":
 1. Kiểm tra chắc chắn đang test qua link GitHub Pages thật (không phải mở file `index.html` trực tiếp) và đã hard-refresh (Ctrl+Shift+R) để loại trừ cache trình duyệt.
@@ -187,7 +188,7 @@ Khác với lỗi `404` ở trên — đây **không phải lỗi do API Key hay
 | `429` RESOURCE_EXHAUSTED | Vượt hạn mức miễn phí | Do người dùng (dùng vượt quota) |
 | `503` UNAVAILABLE | Model quá tải tạm thời | **Do Google**, không phải lỗi app |
 
-`callGeminiText()` (dùng chung cho các tính năng AI) **tự động thử lại tối đa 4 lần** khi gặp đúng lỗi `503`, chờ tăng dần 2s, 4s, 8s và tối đa 15s. Riêng nhập nguồn học hiển thị thời gian đã chờ, cho phép Gemini xử lý tối đa 12 phút và báo riêng giai đoạn lưu Google Apps Script. Nếu hết thời gian hoặc lỗi, nội dung nguồn được giữ nguyên để thử lại. Có thể kiểm tra tình trạng dịch vụ độc lập tại `https://aistudio.google.com`.
+`callGeminiText()` (dùng chung cho các tính năng AI) **tự động thử lại tối đa 4 lần** khi gặp lỗi tạm thời như `503`, chờ tăng dần 2s, 4s, 8s và tối đa 15s. Các tính năng tạo câu ví dụ, nhập nguồn học và tạo hội thoại đều hiển thị thời gian đã chờ và lượt retry. Nếu vẫn lỗi, chọn **Gemini chính, Poe dự phòng** trong tab "Tôi", lưu cả hai API key; ứng dụng sẽ thử Gemini tối đa 90 giây rồi chuyển sang Poe khi gặp lỗi quá tải/mạng. Chế độ này gửi prompt đến Poe khi chuyển dự phòng; lỗi key sai (`400`/`403`) không tự chuyển. Nếu chỉ dùng Gemini và hết retry, chờ một lúc rồi thử lại hoặc kiểm tra `https://aistudio.google.com`.
 
 ## 8b. Vì sao mỗi câu ví dụ cần `blankWord` riêng, và cách vá dữ liệu cũ
 

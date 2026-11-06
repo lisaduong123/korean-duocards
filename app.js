@@ -777,10 +777,60 @@ function initLookupTab() {
 /* --------------------------------------------------------------------------
    8b2. TAB 5 — TÔI (tài khoản Google, Gemini API Key, cài đặt/vá dữ liệu)
    -------------------------------------------------------------------------- */
+const AI_PROVIDER_STORAGE_KEY = "koreanApp_aiProvider_v1";
+const POE_API_KEY_STORAGE_KEY = "koreanApp_poeKey_v1";
+const POE_MODEL_STORAGE_KEY = "koreanApp_poeModel_v1";
+const DEFAULT_POE_MODEL = "ChatGPT-4o-Latest";
+
+function getAISettings() {
+  return {
+    provider: localStorage.getItem(AI_PROVIDER_STORAGE_KEY) || "gemini",
+    geminiKey: localStorage.getItem("koreanApp_geminiKey") || "",
+    poeKey: localStorage.getItem(POE_API_KEY_STORAGE_KEY) || "",
+    poeModel: localStorage.getItem(POE_MODEL_STORAGE_KEY) || DEFAULT_POE_MODEL
+  };
+}
+
+function getAIKeyForCurrentProvider() {
+  const settings = getAISettings();
+  if (settings.provider === "poe") return settings.poeKey;
+  if (settings.provider === "gemini-poe-fallback") {
+    return settings.geminiKey && settings.poeKey ? settings.geminiKey : "";
+  }
+  return settings.geminiKey;
+}
+
+function getAIKeyErrorMessage() {
+  const settings = getAISettings();
+  if (settings.provider === "poe") return "Hãy lưu Poe API Key trong tab Tôi trước.";
+  if (settings.provider === "gemini-poe-fallback") return "Chế độ dự phòng cần cả Gemini API Key và Poe API Key.";
+  return "Hãy lưu Gemini API Key trong tab Tôi trước.";
+}
+
+function getAIProviderLabel() {
+  const provider = getAISettings().provider;
+  if (provider === "poe") return "Poe";
+  if (provider === "gemini-poe-fallback") return "Gemini (Poe dự phòng)";
+  return "Gemini";
+}
+
+function getAIRetryMessage(attempt, delayMs, provider) {
+  if (provider === "poe-fallback") return "Gemini đang bận; chuyển sang Poe dự phòng...";
+  const providerName = provider === "poe" ? "Poe" : "Gemini";
+  return `${providerName} đang bận; tự thử lại lần ${attempt}/4 sau ${Math.ceil(delayMs / 1000)} giây.`;
+}
+
 function initMeTab() {
-  // API Key Gemini — dùng chung cho AI chấm điểm (Tra cứu & AI) và AI tạo thẻ (Thư viện)
+  const settings = getAISettings();
+  const providerSelect = document.getElementById("aiProviderSelect");
+  providerSelect.value = settings.provider;
+  providerSelect.addEventListener("change", () => {
+    localStorage.setItem(AI_PROVIDER_STORAGE_KEY, providerSelect.value);
+    showToast("✓ Đã đổi chế độ AI");
+  });
+
   const apiKeyInput = document.getElementById("apiKeyInput");
-  apiKeyInput.value = localStorage.getItem("koreanApp_geminiKey") || "";
+  apiKeyInput.value = settings.geminiKey;
 
   document.getElementById("btnSaveKey").addEventListener("click", () => {
     const key = apiKeyInput.value.trim();
@@ -790,6 +840,24 @@ function initMeTab() {
     }
     localStorage.setItem("koreanApp_geminiKey", key);
     showToast("✓ Đã lưu API Key");
+  });
+
+  document.getElementById("poeApiKeyInput").value = settings.poeKey;
+  document.getElementById("poeModelInput").value = settings.poeModel;
+  document.getElementById("btnSavePoeKey").addEventListener("click", () => {
+    const key = document.getElementById("poeApiKeyInput").value.trim();
+    const model = document.getElementById("poeModelInput").value.trim();
+    if (!key) {
+      showToast("Hãy nhập Poe API Key trước khi lưu.");
+      return;
+    }
+    if (!model) {
+      showToast("Hãy nhập Poe model ID.");
+      return;
+    }
+    localStorage.setItem(POE_API_KEY_STORAGE_KEY, key);
+    localStorage.setItem(POE_MODEL_STORAGE_KEY, model);
+    showToast("✓ Đã lưu Poe key và model trên trình duyệt này");
   });
 
   // Đồng bộ Google (Sign-In)
@@ -862,13 +930,13 @@ function parseGeminiJson(rawText) {
 }
 
 async function handleAnalyzeSource() {
-  const apiKey = localStorage.getItem("koreanApp_geminiKey");
+  const apiKey = getAIKeyForCurrentProvider();
   const content = document.getElementById("sourceTextInput").value.trim();
   const titleInput = document.getElementById("sourceTitleInput");
   const status = document.getElementById("sourceImportStatus");
   const button = document.getElementById("btnAnalyzeSource");
   if (!firebaseAuth.currentUser) return showToast("⚠️ Đăng nhập Google trước khi lưu nguồn học");
-  if (!apiKey) return showToast("⚠️ Hãy lưu Gemini API Key trong tab Tôi trước");
+  if (!apiKey) return showToast("⚠️ " + getAIKeyErrorMessage());
   if (!content) return showToast("⚠️ Hãy nhập đoạn văn hoặc hội thoại trước");
   if (content.length > 20000) return showToast("⚠️ Nội dung tối đa 20.000 ký tự");
 
@@ -889,18 +957,18 @@ ${content}
 Trả về JSON duy nhất dạng {"words":[{"kr":"...","romaja":"...","vi":"...","surface":"...","context":"...","examples":[{"example":"...","exampleVi":"...","blankWord":"..."}]}]}.`;
 
   button.disabled = true;
-  status.textContent = "Bước 1/2: Đang gửi nội dung tới Gemini để phân tích...";
+  status.textContent = `Bước 1/2: Đang gửi nội dung tới ${getAIProviderLabel()} để phân tích...`;
   const startedAt = Date.now();
   let retryMessage = "";
   const progressTimer = setInterval(() => {
     const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
     status.textContent = retryMessage
       ? `${retryMessage} Đã chờ ${elapsedSeconds} giây.`
-      : `Bước 1/2: Gemini đang phân tích... Đã chờ ${elapsedSeconds} giây.`;
+      : `Bước 1/2: ${getAIProviderLabel()} đang phân tích... Đã chờ ${elapsedSeconds} giây.`;
   }, 5000);
   try {
-    const parsed = parseGeminiJson(await callGeminiText(apiKey, prompt, 4, (attempt, delayMs) => {
-      retryMessage = `Gemini đang bận; tự thử lại lần ${attempt}/4 sau ${Math.ceil(delayMs / 1000)} giây.`;
+    const parsed = parseGeminiJson(await callGeminiText(apiKey, prompt, 4, (attempt, delayMs, provider) => {
+      retryMessage = getAIRetryMessage(attempt, delayMs, provider);
       status.textContent = retryMessage;
     }));
     const known = new Set(knownWords.map(normalizeKoreanWord));
@@ -917,7 +985,7 @@ Trả về JSON duy nhất dạng {"words":[{"kr":"...","romaja":"...","vi":"...
       ).slice(0, 2)
     })).filter(word => word.examples.length > 0).slice(0, 12);
 
-    status.textContent = `Bước 2/2: Gemini xong, có ${words.length} từ mới. Đang lưu nguồn vào Google Sheet...`;
+    status.textContent = `Bước 2/2: AI xong, có ${words.length} từ mới. Đang lưu nguồn vào Google Sheet...`;
     const idToken = await firebaseAuth.currentUser.getIdToken();
     const result = await callGAS({
       mode: "saveLearningSource", idToken, title: titleInput.value.trim(), content, words
@@ -928,10 +996,8 @@ Trả về JSON duy nhất dạng {"words":[{"kr":"...","romaja":"...","vi":"...
     status.textContent = `Đã lưu nguồn và ${result.savedCount} từ mới. Mở history bên dưới để duyệt và thêm vào deck.`;
     await loadLearningSources();
   } catch (err) {
-    status.textContent = err.message.includes("UNAVAILABLE")
-      ? "Gemini đang quá tải sau các lần tự thử lại. Nguồn chưa được lưu; nội dung vẫn còn trong ô. Chờ ít phút rồi bấm ‘Tìm từ mới’ lại nhé."
-      : err.message.includes("Gemini")
-        ? "Gemini phản hồi quá lâu. Nguồn chưa được lưu; nội dung vẫn còn trong ô để thử lại. Chi tiết: " + err.message
+    status.textContent = isTemporaryAIError(err)
+      ? "AI đang quá tải hoặc phản hồi quá lâu. Nguồn chưa được lưu; nội dung vẫn còn trong ô để thử lại sau. Chi tiết: " + err.message
       : err.message.includes("Google Apps Script")
         ? "Gemini đã xử lý xong nhưng Google Apps Script không phản hồi. Nguồn chưa được xác nhận là đã lưu; kiểm tra deployment GAS rồi thử lại. Chi tiết: " + err.message
         : "Không thể phân tích/lưu nội dung: " + err.message;
@@ -1185,19 +1251,30 @@ function startPracticeFromSource(source) {
 
 async function generatePracticeConversation() {
   if (!currentPracticeSource) return showToast("Hãy chọn nguồn học trước");
-  const apiKey = localStorage.getItem("koreanApp_geminiKey");
-  if (!apiKey) return showToast("⚠️ Hãy lưu Gemini API Key trong tab Tôi trước");
+  const apiKey = getAIKeyForCurrentProvider();
+  if (!apiKey) return showToast("⚠️ " + getAIKeyErrorMessage());
   const button = document.getElementById("btnGeneratePractice");
   const status = document.getElementById("practiceStatus");
   button.disabled = true;
-  status.textContent = "AI đang tạo hội thoại theo nguồn học...";
+  const startedAt = Date.now();
+  let retryMessage = "";
+  status.textContent = `${getAIProviderLabel()} đang tạo hội thoại... Đã chờ 0 giây.`;
+  const progressTimer = setInterval(() => {
+    const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+    status.textContent = retryMessage
+      ? `${retryMessage} Đã chờ ${elapsedSeconds} giây.`
+      : `${getAIProviderLabel()} đang tạo hội thoại... Đã chờ ${elapsedSeconds} giây.`;
+  }, 5000);
   try {
     const prompt = `Dựa trên đoạn tiếng Hàn bên dưới, tạo một hội thoại mô phỏng mới gồm 6-8 lượt lời tự nhiên, giữ chủ đề, tình huống và sắc thái giao tiếp tương tự nhưng không chép nguyên văn toàn bộ nguồn. Dùng từ vựng thực tế, mức độ sơ-trung cấp. Mỗi lượt có câu tiếng Hàn và bản dịch tiếng Việt chính xác.
 Nguồn:
 ${currentPracticeSource.content}
 
 Trả về JSON duy nhất dạng {"lines":[{"ko":"...","vi":"...","speaker":"A"}]}.`;
-    const parsed = parseGeminiJson(await callGeminiText(apiKey, prompt));
+    const parsed = parseGeminiJson(await callGeminiText(apiKey, prompt, 4, (attempt, delayMs, provider) => {
+      retryMessage = getAIRetryMessage(attempt, delayMs, provider);
+      status.textContent = retryMessage;
+    }));
     practiceLines = (Array.isArray(parsed.lines) ? parsed.lines : [])
       .filter(line => line.ko && line.vi)
       .slice(0, 12);
@@ -1209,8 +1286,11 @@ Trả về JSON duy nhất dạng {"lines":[{"ko":"...","vi":"...","speaker":"A"
     status.textContent = `${practiceLines.length} lượt hội thoại đã sẵn sàng.`;
     renderPracticeLine();
   } catch (err) {
-    status.textContent = "Không tạo được hội thoại: " + err.message;
+    status.textContent = isTemporaryAIError(err)
+      ? "AI đang quá tải hoặc phản hồi quá lâu. Chưa tạo được hội thoại; hãy thử lại sau. Chi tiết: " + err.message
+      : "Không tạo được hội thoại: " + err.message;
   } finally {
+    clearInterval(progressTimer);
     button.disabled = false;
   }
 }
@@ -1279,9 +1359,9 @@ function speakPracticeLine() {
  * không cần người dùng vào từng thẻ sửa tay.
  */
 async function handleRepairBlankWords() {
-  const apiKey = localStorage.getItem("koreanApp_geminiKey");
+  const apiKey = getAIKeyForCurrentProvider();
   if (!apiKey) {
-    showToast("⚠️ Vui lòng lưu Gemini API Key ở tab Tra cứu & AI trước");
+    showToast("⚠️ " + getAIKeyErrorMessage());
     return;
   }
   if (!firebaseAuth.currentUser) {
@@ -1457,7 +1537,7 @@ function resetCardForm() {
   document.getElementById("cardFormKr").value = "";
   document.getElementById("cardFormRomaja").value = "";
   document.getElementById("cardFormVi").value = "";
-  document.getElementById("cardFormAiStatus").textContent = "Ngừng gõ 1 chút, AI sẽ tự điền phiên âm + nghĩa tiếng Việt (cần đã lưu Gemini API Key ở trên).";
+  document.getElementById("cardFormAiStatus").textContent = `Ngừng gõ 1 chút, ${getAIProviderLabel()} sẽ tự điền phiên âm + nghĩa tiếng Việt (cần lưu key cho provider đang chọn trong tab Tôi).`;
   renderExampleSlots([]);
   document.getElementById("btnSaveCard").textContent = "Thêm thẻ";
 }
@@ -1482,7 +1562,7 @@ async function triggerAiAutoFill() {
   const statusEl = document.getElementById("cardFormAiStatus");
   if (!kr || kr === lastAiFilledKr) return;
 
-  const apiKey = localStorage.getItem("koreanApp_geminiKey");
+  const apiKey = getAIKeyForCurrentProvider();
   if (!apiKey) return; // im lặng bỏ qua nếu chưa có key, hint text đã giải thích sẵn
 
   lastAiFilledKr = kr;
@@ -1529,9 +1609,9 @@ async function handleGenerateAllExamples() {
     showToast("⚠️ Nhập từ tiếng Hàn trước khi tạo câu ví dụ");
     return;
   }
-  const apiKey = localStorage.getItem("koreanApp_geminiKey");
+  const apiKey = getAIKeyForCurrentProvider();
   if (!apiKey) {
-    showToast("⚠️ Vui lòng lưu Gemini API Key ở tab Tra cứu & AI trước");
+    showToast("⚠️ " + getAIKeyErrorMessage());
     return;
   }
 
@@ -1539,11 +1619,20 @@ async function handleGenerateAllExamples() {
   genBtn.disabled = true;
   genBtn.textContent = "Đang tạo 5 câu...";
   const statusEl = document.getElementById("generateExamplesStatus");
-  statusEl.textContent = "🤖 Đang gọi Gemini API, có thể mất vài chục giây...";
   statusEl.className = "hint-text";
+  const startedAt = Date.now();
+  let retryMessage = "";
+  statusEl.textContent = `🤖 ${getAIProviderLabel()} đang tạo 5 câu... Đã chờ 0 giây.`;
+  const progressTimer = setInterval(() => {
+    const elapsedSeconds = Math.floor((Date.now() - startedAt) / 1000);
+    statusEl.textContent = `${retryMessage || `🤖 ${getAIProviderLabel()} đang tạo 5 câu...`} Đã chờ ${elapsedSeconds} giây.`;
+  }, 5000);
 
   try {
-    const results = await aiGenerateExampleSentences(apiKey, kr, MAX_EXAMPLES_PER_CARD);
+    const results = await aiGenerateExampleSentences(apiKey, kr, MAX_EXAMPLES_PER_CARD, (attempt, delayMs, provider) => {
+      retryMessage = getAIRetryMessage(attempt, delayMs, provider);
+      statusEl.textContent = retryMessage;
+    });
     if (results.length === 0) {
       const msg = "⚠️ AI không trả về câu ví dụ hợp lệ (có thể do sai định dạng hoặc từ trong câu không khớp) — thử bấm lại. Xem Console (F12) để đọc nguyên văn phản hồi của AI.";
       showToast("⚠️ AI không trả về câu ví dụ hợp lệ, thử bấm lại");
@@ -1563,9 +1652,15 @@ async function handleGenerateAllExamples() {
   } catch (err) {
     console.error("[handleGenerateAllExamples] Lỗi khi gọi AI tạo câu ví dụ:", err);
     showToast("⚠️ Lỗi tạo câu ví dụ, xem chi tiết bên dưới nút");
-    statusEl.textContent = "⚠️ Lỗi: " + err.message + " — xem thêm chi tiết trong Console (F12 → tab Console).";
+    const recoveryHint = getAISettings().provider === "gemini"
+      ? "Chọn Gemini (Poe dự phòng) trong tab Tôi nếu đã có Poe API Key."
+      : "Kiểm tra provider và API key trong tab Tôi.";
+    statusEl.textContent = isTemporaryAIError(err)
+      ? `⚠️ AI vẫn đang quá tải hoặc phản hồi quá lâu sau khi đã thử lại. ${recoveryHint} Chi tiết: ${err.message}`
+      : "⚠️ Lỗi: " + err.message + " — xem thêm chi tiết trong Console (F12 → tab Console).";
     statusEl.className = "hint-text status-error-text";
   } finally {
+    clearInterval(progressTimer);
     genBtn.disabled = false;
     genBtn.textContent = "✨ Tạo 5 câu bằng AI";
   }
@@ -1673,14 +1768,14 @@ function renderDeckCardList() {
    9. GỌI API GEMINI ĐỂ CHẤM ĐIỂM BẢN DỊCH
    -------------------------------------------------------------------------- */
 async function handleGradeTranslation() {
-  const apiKey = localStorage.getItem("koreanApp_geminiKey");
+  const apiKey = getAIKeyForCurrentProvider();
   const userTranslation = document.getElementById("userTranslation").value.trim();
   const resultBox = document.getElementById("aiResult");
   const gradeBtn = document.getElementById("btnGrade");
   const gradeBtnText = document.getElementById("gradeBtnText");
 
   if (!apiKey) {
-    showToast("⚠️ Vui lòng nhập và lưu API Key Gemini trước");
+    showToast("⚠️ " + getAIKeyErrorMessage());
     return;
   }
   if (!userTranslation) {
@@ -1753,7 +1848,37 @@ Nhận xét: <nhận xét ngắn gọn 2-3 câu bằng tiếng Việt, chỉ ra 
  * đây là lỗi tạm thời từ phía Google (model UNAVAILABLE do spike nhu cầu), thường tự hết
  * sau vài giây, không phải lỗi do API Key hay code sai.
  */
+function isTemporaryAIError(error) {
+  return /HTTP (429|502|503|529)|UNAVAILABLE|overload|timeout|timed out|không phản hồi|vượt quá thời gian/i.test(error.message || "");
+}
+
 async function callGeminiText(apiKey, prompt, retriesLeft = 4, onRetry = null, deadline = Date.now() + 720000) {
+  const settings = getAISettings();
+  if (settings.provider === "poe") {
+    return callPoeText(settings.poeKey, settings.poeModel, prompt, onRetry, deadline);
+  }
+
+  if (settings.provider === "gemini-poe-fallback") {
+    if (!settings.poeKey) throw new Error("Chế độ dự phòng cần Poe API Key. Hãy lưu key trong tab Tôi.");
+    try {
+      return await callGeminiProviderText(
+        settings.geminiKey,
+        prompt,
+        4,
+        onRetry,
+        Math.min(deadline, Date.now() + 90000)
+      );
+    } catch (err) {
+      if (!isTemporaryAIError(err)) throw err;
+      if (onRetry) onRetry(1, 0, "poe-fallback");
+      return callPoeText(settings.poeKey, settings.poeModel, prompt, onRetry, deadline);
+    }
+  }
+
+  return callGeminiProviderText(apiKey, prompt, retriesLeft, onRetry, deadline);
+}
+
+async function callGeminiProviderText(apiKey, prompt, retriesLeft, onRetry, deadline) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(apiKey)}`;
   const remainingMs = deadline - Date.now();
   if (remainingMs <= 0) throw new Error("Gemini vượt quá thời gian chờ tối đa 12 phút.");
@@ -1769,16 +1894,16 @@ async function callGeminiText(apiKey, prompt, retriesLeft = 4, onRetry = null, d
   if (!response.ok) {
     const errText = await response.text();
 
-    if (response.status === 503 && retriesLeft > 0) {
+    if ([429, 502, 503, 529].includes(response.status) && retriesLeft > 0) {
       const attempt = 5 - retriesLeft;
       const delayMs = Math.min(15000, 2000 * (2 ** (attempt - 1)));
       if (Date.now() + delayMs >= deadline) {
         throw new Error("Gemini tiếp tục quá tải và đã chạm giới hạn chờ 12 phút.");
       }
-      console.warn(`[callGeminiText] Model đang quá tải (503), thử lại lần ${attempt} sau ${delayMs}ms...`);
-      if (onRetry) onRetry(attempt, delayMs);
+      console.warn(`[Gemini] Lỗi tạm thời HTTP ${response.status}, thử lại lần ${attempt} sau ${delayMs}ms...`);
+      if (onRetry) onRetry(attempt, delayMs, "gemini");
       await new Promise(resolve => setTimeout(resolve, delayMs));
-      return callGeminiText(apiKey, prompt, retriesLeft - 1, onRetry, deadline);
+      return callGeminiProviderText(apiKey, prompt, retriesLeft - 1, onRetry, deadline);
     }
 
     throw new Error(`HTTP ${response.status} - ${errText}`);
@@ -1787,6 +1912,49 @@ async function callGeminiText(apiKey, prompt, retriesLeft = 4, onRetry = null, d
   const data = await response.json();
   return data?.candidates?.[0]?.content?.parts?.[0]?.text ||
     "Không nhận được phản hồi hợp lệ từ Gemini API.";
+}
+
+async function callPoeText(apiKey, model, prompt, onRetry = null, deadline = Date.now() + 720000, retriesLeft = 4) {
+  if (!apiKey) throw new Error("Chưa lưu Poe API Key trong tab Tôi.");
+  const endpoint = "https://api.poe.com/v1/chat/completions";
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 0) throw new Error("Poe vượt quá thời gian chờ tối đa 12 phút.");
+
+  const response = await fetchWithTimeout(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 4000
+    })
+  }, Math.min(720000, remainingMs), "Poe");
+
+  if (!response.ok) {
+    const errText = await response.text();
+    if ([429, 502, 503, 529].includes(response.status) && retriesLeft > 0) {
+      const attempt = 5 - retriesLeft;
+      const delayMs = Math.min(15000, 2000 * (2 ** (attempt - 1)));
+      if (Date.now() + delayMs >= deadline) {
+        throw new Error("Poe tiếp tục quá tải và đã chạm giới hạn chờ 12 phút.");
+      }
+      if (onRetry) onRetry(attempt, delayMs, "poe");
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      return callPoeText(apiKey, model, prompt, onRetry, deadline, retriesLeft - 1);
+    }
+    throw new Error(`Poe HTTP ${response.status} - ${errText}`);
+  }
+
+  const data = await response.json();
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map(part => typeof part === "string" ? part : part.text || "").join("");
+  }
+  return "Không nhận được phản hồi hợp lệ từ Poe API.";
 }
 
 /**
@@ -1821,7 +1989,7 @@ Nghĩa: <nghĩa tiếng Việt ngắn gọn, có thể ghi vài nghĩa cách nha
  * đúng dạng gốc, tab "Điền từ" sẽ không tìm thấy chữ để tạo chỗ trống.
  * @returns {Promise<Array<{example: string, exampleVi: string, blankWord: string}>>}
  */
-async function aiGenerateExampleSentences(apiKey, krWord, count) {
+async function aiGenerateExampleSentences(apiKey, krWord, count, onRetry = null) {
   const writtenCount = Math.round(count * 0.6); // vd count=5 -> 3 câu 문어체
   const spokenCount = count - writtenCount;      //              -> 2 câu 구어체
 
@@ -1843,7 +2011,7 @@ Từ trong câu: <đúng cụm chữ của từ như xuất hiện trong câu n�
 Dịch: <bản dịch tiếng Việt>
 (tiếp tục đến hết ${count} câu theo đúng mẫu trên)`;
 
-  const rawText = await callGeminiText(apiKey, prompt);
+  const rawText = await callGeminiText(apiKey, prompt, 4, onRetry);
   console.log("[aiGenerateExampleSentences] Raw text AI trả về:\n" + rawText);
 
   const results = [];

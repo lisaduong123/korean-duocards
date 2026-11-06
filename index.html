@@ -194,7 +194,7 @@
           <div class="card-block source-import-block">
             <h2 class="block-title">🗂️ Nhập nội dung học</h2>
             <p class="hint-text" id="sourceLoginHint">Đăng nhập Google để lưu nguồn học và history riêng của bạn.</p>
-            <p class="hint-text">Khi phân tích, nội dung được gửi tới Gemini bằng API key của bạn và lưu vào Google Sheet theo tài khoản đang đăng nhập.</p>
+            <p class="hint-text">Khi phân tích, nội dung được gửi tới provider AI đang chọn và lưu vào Google Sheet theo tài khoản đang đăng nhập.</p>
             <label class="field-label mt" for="sourceTitleInput">Tên nguồn</label>
             <input type="text" id="sourceTitleInput" class="input-field" placeholder="Ví dụ: Hội thoại ở quán cà phê">
             <label class="field-label mt" for="sourceTextInput">Đoạn văn hoặc hội thoại</label>
@@ -288,7 +288,7 @@
                 <h3 class="block-title" style="font-size:15px;">✏️ Thêm / sửa thẻ</h3>
                 <label class="field-label">Từ tiếng Hàn *</label>
                 <input type="text" id="cardFormKr" class="input-field" placeholder="예: 안녕하세요">
-                <p class="hint-text" id="cardFormAiStatus">Ngừng gõ 1 chút, AI sẽ tự điền phiên âm + nghĩa tiếng Việt (cần đã lưu Gemini API Key ở trên).</p>
+                <p class="hint-text" id="cardFormAiStatus">Ngừng gõ 1 chút, AI sẽ tự điền phiên âm + nghĩa tiếng Việt (cần lưu key cho provider đang chọn trong tab Tôi).</p>
 
                 <label class="field-label mt">Phiên âm (romaja)</label>
                 <input type="text" id="cardFormRomaja" class="input-field" placeholder="annyeonghaseyo">
@@ -300,7 +300,7 @@
                   <label class="field-label">Câu ví dụ (tối đa 5, không bắt buộc)</label>
                   <button type="button" class="btn btn-secondary btn-sm" id="btnGenerateAllExamples">✨ Tạo 5 câu bằng AI</button>
                 </div>
-                <p class="hint-text">AI sẽ tạo 1 lần cả 5 câu, mỗi câu thuộc chủ đề và độ dài khác nhau cho đa dạng. Bấm lại để tạo bộ câu mới, hoặc sửa tay từng câu.</p>
+                <p class="hint-text">AI sẽ tạo 1 lần cả 5 câu, mỗi câu thuộc chủ đề và độ dài khác nhau cho đa dạng. Nếu Gemini tạm quá tải, ứng dụng sẽ tự thử lại; có thể bật Poe dự phòng trong tab Tôi. Bấm lại để tạo bộ câu mới, hoặc sửa tay từng câu.</p>
                 <p class="hint-text" id="generateExamplesStatus"></p>
                 <div id="exampleSlotsContainer">
                   <!-- injected by JS: 5 slot văn bản, điền bằng nút AI phía trên hoặc gõ tay -->
@@ -327,12 +327,34 @@
           </div>
 
           <div class="card-block">
+            <h2 class="block-title">🤖 Nhà cung cấp AI</h2>
+            <label class="field-label" for="aiProviderSelect">Chế độ AI</label>
+            <select id="aiProviderSelect" class="input-field">
+              <option value="gemini">Gemini</option>
+              <option value="poe">Poe</option>
+              <option value="gemini-poe-fallback">Gemini chính, Poe dự phòng</option>
+            </select>
+            <p class="hint-text">Chế độ dự phòng thử Gemini tối đa 90 giây, sau đó chuyển sang Poe khi gặp lỗi tạm thời. Khi dùng Poe, nội dung yêu cầu sẽ được gửi tới Poe. Key sai sẽ không tự chuyển.</p>
+          </div>
+
+          <div class="card-block">
             <h2 class="block-title">🔑 Gemini API Key</h2>
             <div class="input-with-btn">
               <input type="password" id="apiKeyInput" class="input-field" placeholder="Dán API Key Gemini của bạn...">
               <button class="btn btn-secondary btn-sm" id="btnSaveKey">Lưu</button>
             </div>
             <p class="hint-text">Dùng chung cho tính năng AI chấm điểm (tab Tra cứu & AI) và AI hỗ trợ tạo thẻ (tab Thư viện). Key được lưu cục bộ (localStorage) trên trình duyệt của bạn, không gửi đi đâu khác.</p>
+          </div>
+
+          <div class="card-block">
+            <h2 class="block-title">🔑 Poe API Key</h2>
+            <label class="field-label" for="poeModelInput">Poe model ID</label>
+            <input type="text" id="poeModelInput" class="input-field" placeholder="ChatGPT-4o-Latest">
+            <div class="input-with-btn mt">
+              <input type="password" id="poeApiKeyInput" class="input-field" placeholder="Dán Poe API Key mới đã rotate...">
+              <button class="btn btn-secondary btn-sm" id="btnSavePoeKey">Lưu Poe</button>
+            </div>
+            <p class="hint-text">Model mặc định là ChatGPT-4o-Latest. Key chỉ lưu trong localStorage của trình duyệt này; không đưa key vào source code hoặc GitHub. Model ID cần khớp tên bot hiện được Poe API hỗ trợ.</p>
           </div>
 
           <div class="card-block">
