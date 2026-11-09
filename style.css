@@ -118,6 +118,10 @@ body {
 }
 
 /* ---------------------------------- TAB NAV ---------------------------------- */
+.learning-layout {
+  grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
+}
+
 .tab-nav {
   position: relative;
   display: flex;
@@ -727,9 +731,97 @@ body {
 
 /* ---------------------------------- SOURCE LEARNING ---------------------------------- */
 .source-import-block,
-.source-history-block,
 .source-practice-block {
   margin-bottom: 18px;
+}
+
+.learning-layout {
+  display: grid;
+  grid-template-columns: minmax(230px, 290px) minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.lesson-sidebar {
+  position: sticky;
+  top: 16px;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.lesson-sidebar-heading,
+.lesson-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lesson-sidebar-heading {
+  margin-bottom: 14px;
+}
+
+.lesson-sidebar-heading .block-title,
+.lesson-detail-heading .block-title {
+  margin: 0;
+}
+
+.lesson-sidebar > .hint-text {
+  margin-bottom: 12px;
+}
+
+.lesson-main {
+  min-width: 0;
+}
+
+.lesson-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.lesson-detail > .card-block {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.lesson-detail-heading {
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.lesson-date {
+  margin: 0 0 5px;
+  color: var(--color-text-soft);
+  font-size: 12px;
+}
+
+.lesson-section-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.lesson-detail-heading + .lesson-section-title {
+  margin-top: 20px;
+}
+
+.lesson-empty-state {
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.lesson-empty-state h2 {
+  margin: 8px 0 0;
+  font-size: 20px;
+}
+
+.lesson-empty-state .hint-text {
+  max-width: 440px;
+  margin: 8px 0 18px;
 }
 
 .source-text-input {
@@ -760,6 +852,41 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.lesson-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.lesson-list-item:hover,
+.lesson-list-item.active {
+  border-color: var(--color-primary);
+  background: var(--color-bg-alt);
+}
+
+.lesson-list-item.active {
+  box-shadow: inset 3px 0 var(--color-primary);
+}
+
+.lesson-list-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lesson-list-item span {
+  color: var(--color-text-soft);
+  font-size: 11px;
 }
 
 .source-history-item {
@@ -1255,6 +1382,25 @@ body {
 
   .input-with-btn {
     flex-direction: column;
+  }
+
+  .learning-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .lesson-sidebar {
+    position: static;
+  }
+
+  .source-history-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    max-height: 240px;
+    overflow-y: auto;
+  }
+
+  .lesson-detail-heading {
+    align-items: flex-start;
   }
 
   .source-import-actions,

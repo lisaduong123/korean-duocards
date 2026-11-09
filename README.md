@@ -17,12 +17,12 @@
 - **Thư viện (Library) & Deck cá nhân:** tab "Thư viện" **chỉ để quản lý deck** (tạo/xoá deck, thêm/sửa/xoá flashcard trong đó) — **Basic Deck** (20 từ có sẵn, chỉ xem, không sửa) và **deck cá nhân tự tạo**, lưu trên Google Sheet gắn theo tài khoản Google đã đăng nhập. **Chọn deck nào để học** lại làm ở dropdown ngay tại tab Flashcard (không làm ở Thư viện) — chọn xong, tab Điền từ và Tra cứu & AI sẽ hiện "📚 Đang học: <tên deck>" để biết đang học deck nào; đổi deck thì quay lại tab Flashcard chọn deck khác.
 - **AI hỗ trợ tạo thẻ trong deck cá nhân:** gõ từ tiếng Hàn xong ngừng gõ ~1 giây, AI tự điền phiên âm + nghĩa tiếng Việt. Mỗi thẻ có tối đa **5 slot câu ví dụ** — bấm 1 nút **"✨ Tạo 5 câu bằng AI"** để sinh cả 5 câu cùng lúc: khác chủ đề/độ dài nhau, thiên về cách dùng thực tế trong đời sống/công việc (không học thuật/giáo trình), và trộn văn phong (~60% 문어체 trang trọng, ~40% 구어체 khẩu ngữ) cho đa dạng. Không bắt buộc điền đủ 5, và có thể sửa tay từng câu sau khi AI tạo. Cả hai tính năng dùng provider và API key đang chọn ở tab "Tôi"; lỗi quá tải tạm thời được tự thử lại và có thể cấu hình Poe làm dự phòng.
 - **Tab "Tôi":** nơi quản lý tài khoản/cài đặt chung — đăng nhập Google, chọn Gemini/Poe, lưu API key tương ứng, và nút "🔧 Quét & vá dữ liệu câu ví dụ" (quét toàn bộ deck cá nhân, tự dò lại bằng AI những câu ví dụ bị thiếu/sai dữ liệu — ví dụ do được tạo trước 1 bản cập nhật đổi cấu trúc lưu trữ — và lưu lại, không cần sửa tay từng thẻ, an toàn bấm lại nhiều lần).
-- **Nguồn học & luyện dịch:** dán đoạn văn/hội thoại, AI tìm từ ngoài tất cả deck hiện có và danh sách account đã đánh dấu `skipped`/`known`, tránh tạo ví dụ cho các từ đó. Người học có thể bỏ qua cho những lần nhập sau, đánh dấu đã biết, hoặc khôi phục từ đã loại; mỗi trạng thái lưu trong `Từ vựng trích xuất`. Có thể chọn deck sẵn hoặc tạo deck mới ngay từ dropdown và tự thêm từ vào đó. Nguồn và danh sách từ được lưu theo tài khoản. Nút **Luyện dịch** của mỗi nguồn mở một hội thoại AI tạo bằng các từ vựng của nguồn đó, bắt chước kính ngữ, văn phong và vai nói của nguồn. Cả đoạn hiện cùng lúc theo chiều Việt → Hàn hoặc Hàn → Việt; người học tự nói bản dịch rồi chạm từng câu hoặc bấm "Hiện tất cả" để xem đáp án, và nghe tiếng Hàn bằng speech synthesis của trình duyệt (không nhận diện giọng nói). Hội thoại được tạo một lần rồi lưu vào cột `Hội thoại (JSON)` của sheet `Nguồn học`, lần sau mở lại không cần gọi AI; bấm "Tạo hội thoại mới" để đổi bài.
+- **Bài học:** mỗi đoạn văn/hội thoại được lưu thành một bài học có ngày tạo, nội dung, danh sách từ AI tách ra và deck flashcard riêng. Danh sách bài học nằm bên trái, sắp xếp bài mới nhất trước; chọn bài để xem nội dung, học bộ từ hoặc mở hội thoại. Hội thoại được tạo theo yêu cầu (không tự gọi AI khi mở bài), dùng ngữ cảnh và từ vựng của bài rồi lưu vào cột `Hội thoại (JSON)` để lần sau mở lại ngay. Hỗ trợ dịch Việt → Hàn hoặc Hàn → Việt, hiện đáp án từng câu/toàn bộ và nghe phát âm tiếng Hàn. Các từ có thể đánh dấu đã biết/bỏ qua để loại khỏi gợi ý cho bài sau.
 
 ## 2. Cấu trúc project
 
 ```
-index.html   Giao diện chính (6 tab: Flashcard, Điền từ, Tra cứu & AI, Nguồn học, Thư viện, Tôi)
+index.html   Giao diện chính (6 tab: Flashcard, Điền từ, Tra cứu & AI, Bài học, Thư viện, Tôi)
 style.css    Toàn bộ style
 app.js       Logic app: SRS, deck cá nhân, history nguồn học, luyện dịch, cloze, Gemini API, đăng nhập Google & GAS
 gas/Code.gs  Google Apps Script: API đọc/ghi Google Sheet + xác thực Google ID token
@@ -34,7 +34,7 @@ gas/Code.gs  Google Apps Script: API đọc/ghi Google Sheet + xác thực Googl
 
 Mỗi deck/thẻ cá nhân được cấp 1 ID dạng UUID (sinh bởi `Utilities.getUuid()` phía server), gắn theo email đã đăng nhập — vì vậy **bắt buộc phải đăng nhập Google** mới tạo/xem/sửa được deck cá nhân (tab Thư viện sẽ hiện thông báo yêu cầu đăng nhập nếu chưa đăng nhập). Đổi lại, deck cá nhân tự động đồng bộ đa thiết bị (đăng nhập cùng tài khoản ở máy khác vẫn thấy đúng deck đó), và không có rủi ro trùng ID giữa những người dùng khác nhau (UUID không bao giờ trùng).
 
-Tiến độ SRS (đã nhớ/chưa nhớ) của thẻ cá nhân vẫn chỉ lưu **local** (`localStorage`, xem mục 6) — không đồng bộ lên sheet `Tiến Độ Học` dùng chung. Nguồn học và từ AI trích xuất được lưu riêng theo email ở `Nguồn học` và `Từ vựng trích xuất`; thẻ được import vào deck có thêm `SourceID`/`ExtractionID` để truy về nguồn gốc.
+Tiến độ SRS (đã nhớ/chưa nhớ) của thẻ cá nhân vẫn chỉ lưu **local** (`localStorage`, xem mục 6) — không đồng bộ lên sheet `Tiến Độ Học` dùng chung. Bài học và từ AI trích xuất được lưu riêng theo email ở `Nguồn học` và `Từ vựng trích xuất`; mỗi bài học có một deck riêng trong `Decks Cá Nhân`, các thẻ gắn `SourceID`/`ExtractionID` để truy về nguồn gốc. Deck của bài học được quản lý từ tab Bài học thay vì danh sách deck thủ công.
 
 ---
 
@@ -111,6 +111,8 @@ Dán `firebaseConfig` từ Bước A vào `app.js` (hằng số `firebaseConfig`
    clasp deploy --deploymentId <id đúng bằng URL .../exec đang dùng>
    ```
 
+Sau khi cập nhật, cột `DeckID` được thêm vào sheet `Nguồn học`; dữ liệu bài học cũ vẫn được giữ nguyên. Mở một bài học cũ sẽ tự tạo deck từ vựng riêng cho bài đó (an toàn khi tải lại).
+
 Sau đó commit & push lại lên GitHub, GitHub Pages sẽ tự cập nhật.
 
 ---
@@ -127,7 +129,8 @@ Mở trực tiếp `index.html` bằng trình duyệt, hoặc dùng 1 static ser
 4. Qua tab **Thư viện** → tạo 1 deck cá nhân, thêm/sửa/xoá vài thẻ → kiểm tra sheet **`Decks Cá Nhân`** phản ánh đúng thay đổi.
 5. Đóng trình duyệt, mở lại link demo → xác nhận vẫn thấy trạng thái "✓ Đã đăng nhập" mà không cần bấm lại (đây là điểm khác biệt so với GIS thuần trước đây).
 6. Các sheet cũ (`Nhập Data`, `Raw Data`, `Nhập Data (Ngôn ngữ user)`, `Cặp từ`) phải giữ nguyên, không có gì thay đổi.
-7. Qua tab **Nguồn học**, nhập một đoạn ngắn; xác nhận nguồn và các từ xuất hiện ở hai sheet mới, rồi thêm một từ vào deck để kiểm tra trạng thái và CardID được liên kết.
+7. Qua tab **Bài học**, tạo một bài mới; xác nhận nguồn, từ vựng, deck riêng và liên kết CardID trong các sheet `Nguồn học`, `Từ vựng trích xuất`, `Decks Cá Nhân`.
+8. Tạo hội thoại cho bài học; xác nhận hội thoại xuất hiện và được lưu vào cột `Hội thoại (JSON)`. Tải lại trang, mở lại bài và xác nhận hội thoại hiện ngay mà không gọi AI.
 
 ## 6. Dữ liệu lưu ở đâu
 

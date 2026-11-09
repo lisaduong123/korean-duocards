@@ -155,24 +155,28 @@ async function loadLearningSources() {
   if (!firebaseAuth.currentUser) {
     learningSources = [];
     excludedSourceWords = [];
-    list.innerHTML = "<p class=\"hint-text\">Đăng nhập Google để lưu và xem history nguồn học.</p>";
+    selectedLearningSourceId = "";
+    list.innerHTML = "<p class=\"hint-text\">Đăng nhập Google để lưu và xem bài học.</p>";
     document.getElementById("btnAnalyzeSource").disabled = true;
-    document.getElementById("sourceLoginHint").textContent = "Đăng nhập Google trong tab Tôi để dùng nguồn học cá nhân.";
+    document.getElementById("btnNewSource").disabled = true;
+    document.getElementById("sourceLoginHint").textContent = "Đăng nhập Google trong tab Tôi để dùng bài học cá nhân.";
+    renderSelectedLearningSource(null);
     return;
   }
 
   document.getElementById("btnAnalyzeSource").disabled = false;
-  document.getElementById("sourceLoginHint").textContent = "Đoạn nhập, từ đã bỏ qua và từ đã biết được lưu riêng theo tài khoản Google của bạn.";
-  list.innerHTML = "<p class=\"hint-text\">Đang tải history...</p>";
+  document.getElementById("btnNewSource").disabled = false;
+  document.getElementById("sourceLoginHint").textContent = "Bài học và tiến độ từ vựng được lưu riêng theo tài khoản Google của bạn.";
+  list.innerHTML = "<p class=\"hint-text\">Đang tải bài học...</p>";
   try {
     const idToken = await firebaseAuth.currentUser.getIdToken();
     const result = await callGAS({ mode: "listLearningSources", idToken });
-    if (!result.success) throw new Error(result.error || "Không tải được history.");
+    if (!result.success) throw new Error(result.error || "Không tải được bài học.");
     learningSources = result.sources || [];
     excludedSourceWords = result.excludedWords || [];
     renderLearningSources();
   } catch (err) {
-    list.textContent = "Không tải được history: " + err.message;
+    list.textContent = "Không tải được bài học: " + err.message;
   }
 }
 
@@ -362,6 +366,7 @@ let clozeIndex = 0;
 let clozeAnswered = false;
 let learningSources = [];
 let excludedSourceWords = [];
+let selectedLearningSourceId = "";
 let currentPracticeSource = null;
 let practiceLines = [];
 let practiceGenerating = false;
@@ -936,13 +941,13 @@ async function handleAnalyzeSource() {
   const titleInput = document.getElementById("sourceTitleInput");
   const status = document.getElementById("sourceImportStatus");
   const button = document.getElementById("btnAnalyzeSource");
-  if (!firebaseAuth.currentUser) return showToast("⚠️ Đăng nhập Google trước khi lưu nguồn học");
+  if (!firebaseAuth.currentUser) return showToast("⚠️ Đăng nhập Google trước khi tạo bài học");
   if (!apiKey) return showToast("⚠️ " + getAIKeyErrorMessage());
   if (!content) return showToast("⚠️ Hãy nhập đoạn văn hoặc hội thoại trước");
   if (content.length > 20000) return showToast("⚠️ Nội dung tối đa 20.000 ký tự");
 
   const knownWords = [...new Map(
-    [...getAllDecks().flatMap(deck => deck.cards.map(card => card.kr)), ...excludedSourceWords]
+    [...getAllDecks().filter(deck => !deck.sourceId).flatMap(deck => deck.cards.map(card => card.kr)), ...excludedSourceWords]
       .filter(Boolean)
       .map(word => [normalizeKoreanWord(word), word])
   ).values()];
@@ -986,22 +991,29 @@ Trả về JSON duy nhất dạng {"words":[{"kr":"...","romaja":"...","vi":"...
       ).slice(0, 2)
     })).filter(word => word.examples.length > 0).slice(0, 12);
 
-    status.textContent = `Bước 2/2: AI xong, có ${words.length} từ mới. Đang lưu nguồn vào Google Sheet...`;
+    status.textContent = `Đang lưu bài học và tạo bộ từ vựng...`;
     const idToken = await firebaseAuth.currentUser.getIdToken();
     const result = await callGAS({
       mode: "saveLearningSource", idToken, title: titleInput.value.trim(), content, words
     });
-    if (!result.success) throw new Error(result.error || "Không lưu được nguồn học.");
+    if (!result.success) throw new Error(result.error || "Không lưu được bài học.");
     document.getElementById("sourceTextInput").value = "";
     titleInput.value = "";
-    status.textContent = `Đã lưu nguồn và ${result.savedCount} từ mới. Mở history bên dưới để duyệt và thêm vào deck.`;
+    status.textContent = `Đã tạo bài học với ${result.savedCount} từ vựng.`;
+    document.getElementById("sourceImportBlock").style.display = "none";
+    await fetchPersonalDecks();
     await loadLearningSources();
+    const savedSource = learningSources.find(source => source.id === result.sourceId);
+    if (savedSource) {
+      selectLearningSource(savedSource);
+      showToast(`✓ Đã tạo bài học "${savedSource.title}"`);
+    }
   } catch (err) {
     status.textContent = isTemporaryAIError(err)
-      ? "AI đang quá tải hoặc phản hồi quá lâu. Nguồn chưa được lưu; nội dung vẫn còn trong ô để thử lại sau. Chi tiết: " + err.message
+      ? "AI đang quá tải hoặc phản hồi quá lâu. Bài học chưa được lưu; nội dung vẫn còn trong ô để thử lại sau. Chi tiết: " + err.message
       : err.message.includes("Google Apps Script")
-        ? "Gemini đã xử lý xong nhưng Google Apps Script không phản hồi. Nguồn chưa được xác nhận là đã lưu; kiểm tra deployment GAS rồi thử lại. Chi tiết: " + err.message
-        : "Không thể phân tích/lưu nội dung: " + err.message;
+        ? "AI đã xử lý xong nhưng Google Apps Script không phản hồi. Bài học chưa được xác nhận là đã lưu; kiểm tra deployment GAS rồi thử lại. Chi tiết: " + err.message
+        : "Không thể phân tích/tạo bài học: " + err.message;
   } finally {
     clearInterval(progressTimer);
     button.disabled = false;
@@ -1033,56 +1045,132 @@ function renderLearningSources() {
   const list = document.getElementById("sourceHistoryList");
   list.replaceChildren();
   if (!learningSources.length) {
-    list.innerHTML = "<p class=\"hint-text\">Chưa có nguồn học nào. Nhập một đoạn ở trên để bắt đầu.</p>";
+    selectedLearningSourceId = "";
+    list.innerHTML = "<p class=\"hint-text\">Chưa có bài học. Bấm “Bài học mới” để bắt đầu.</p>";
+    renderSelectedLearningSource(null);
     return;
   }
 
-  learningSources.forEach(source => {
-    const article = document.createElement("article");
-    article.className = "source-history-item";
-    const heading = document.createElement("div");
-    heading.className = "source-history-heading";
-    const title = document.createElement("h3");
-    title.className = "source-history-title";
+  const sortedSources = [...learningSources].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  if (!sortedSources.some(source => source.id === selectedLearningSourceId)) {
+    selectedLearningSourceId = sortedSources[0].id;
+  }
+  sortedSources.forEach(source => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "lesson-list-item";
+    button.classList.toggle("active", source.id === selectedLearningSourceId);
+    button.setAttribute("aria-current", source.id === selectedLearningSourceId ? "true" : "false");
+    const title = document.createElement("strong");
     title.textContent = source.title;
-    const actions = document.createElement("div");
-    actions.className = "deck-card-item-actions";
-    const practiceButton = document.createElement("button");
-    practiceButton.className = "btn btn-secondary btn-sm";
-    practiceButton.textContent = "Luyện dịch";
-    practiceButton.addEventListener("click", () => startPracticeFromSource(source));
-    const deleteButton = document.createElement("button");
-    deleteButton.className = "btn btn-tertiary btn-sm";
-    deleteButton.textContent = "Xóa nguồn";
-    deleteButton.addEventListener("click", async () => {
-      if (!confirm("Xóa nội dung nguồn và history từ đã trích xuất? Các thẻ đã thêm vào deck sẽ được giữ lại.")) return;
-      const idToken = await firebaseAuth.currentUser.getIdToken();
-      const result = await callGAS({ mode: "deleteLearningSource", idToken, sourceId: source.id });
-      if (!result.success) return showToast("⚠️ " + (result.error || "Không xóa được nguồn"));
-      learningSources = learningSources.filter(item => item.id !== source.id);
-      refreshExcludedSourceWords();
-      renderLearningSources();
-    });
-    actions.append(practiceButton, deleteButton);
-    heading.append(title, actions);
-    article.appendChild(heading);
-
-    const details = document.createElement("details");
-    details.className = "source-content-details";
-    const summary = document.createElement("summary");
-    summary.textContent = `Xem nội dung nguồn · ${source.words.length} từ trích xuất`;
-    const content = document.createElement("p");
-    content.className = "source-original-text";
-    content.textContent = source.content;
-    details.append(summary, content);
-    article.appendChild(details);
-
-    const wordList = document.createElement("div");
-    wordList.className = "source-extracted-words";
-    source.words.forEach(word => wordList.appendChild(renderExtractedWord(source, word)));
-    article.appendChild(wordList);
-    list.appendChild(article);
+    const meta = document.createElement("span");
+    meta.textContent = `${formatLessonDate(source.createdAt)} · ${source.words.length} từ`;
+    button.append(title, meta);
+    button.addEventListener("click", () => selectLearningSource(source));
+    list.appendChild(button);
   });
+  const selectedSource = sortedSources.find(source => source.id === selectedLearningSourceId);
+  renderSelectedLearningSource(selectedSource);
+  if (selectedSource && !selectedSource.deckId) ensureSourceVocabularyDeck(selectedSource);
+}
+
+function formatLessonDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Ngày không xác định";
+  return new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function selectLearningSource(source) {
+  selectedLearningSourceId = source.id;
+  currentPracticeSource = source;
+  document.getElementById("sourceImportBlock").style.display = "none";
+  renderLearningSources();
+}
+
+function renderSelectedLearningSource(source) {
+  const empty = document.getElementById("sourceLessonEmpty");
+  const detail = document.getElementById("sourceLessonDetail");
+  empty.style.display = source ? "none" : "block";
+  detail.style.display = source ? "flex" : "none";
+  if (!source) {
+    currentPracticeSource = null;
+    practiceLines = [];
+    renderPracticeDialogue();
+    return;
+  }
+
+  currentPracticeSource = source;
+  document.getElementById("sourceLessonDate").textContent = formatLessonDate(source.createdAt);
+  document.getElementById("sourceLessonTitle").textContent = source.title;
+  document.getElementById("sourceLessonContent").textContent = source.content;
+  document.getElementById("sourceDeckStatus").textContent = source.deckId
+    ? `Deck riêng · ${source.words.length} từ vựng`
+    : "Đang chuẩn bị deck riêng cho bài học...";
+  document.getElementById("btnStudySourceDeck").textContent = source.deckId ? "Học flashcard" : "Đang tạo deck...";
+  document.getElementById("btnStudySourceDeck").disabled = !source.deckId;
+
+  const wordList = document.getElementById("sourceVocabularyList");
+  wordList.replaceChildren();
+  if (source.words.length) {
+    source.words.forEach(word => wordList.appendChild(renderExtractedWord(source, word)));
+  } else {
+    const noWords = document.createElement("p");
+    noWords.className = "hint-text";
+    noWords.textContent = "Bài học này chưa có từ vựng được trích xuất.";
+    wordList.appendChild(noWords);
+  }
+
+  document.getElementById("practiceSourceTitle").textContent = source.title;
+  document.getElementById("btnGeneratePractice").textContent = source.dialogue.length ? "Tạo hội thoại mới" : "Tạo hội thoại";
+  practiceLines = Array.isArray(source.dialogue) ? source.dialogue : [];
+  document.getElementById("practiceStatus").textContent = practiceLines.length
+    ? "Hội thoại đã lưu cùng bài học."
+    : "Chưa tạo hội thoại. Có thể tạo riêng khi bạn sẵn sàng; nội dung bài học đã được lưu.";
+  renderPracticeDialogue();
+}
+
+async function ensureSourceVocabularyDeck(source) {
+  if (!firebaseAuth.currentUser || source.deckId) return;
+  const button = document.getElementById("btnStudySourceDeck");
+  const status = document.getElementById("sourceDeckStatus");
+  const isSelected = () => selectedLearningSourceId === source.id;
+  if (isSelected()) {
+    button.disabled = true;
+    status.textContent = "Đang tạo deck từ vựng cho bài học...";
+  }
+  try {
+    const idToken = await firebaseAuth.currentUser.getIdToken();
+    const result = await callGAS({ mode: "ensureSourceDeck", idToken, sourceId: source.id });
+    if (!result.success) throw new Error(result.error || "Không tạo được deck từ vựng.");
+    source.deckId = result.deckId;
+    await fetchPersonalDecks();
+    renderLearningSources();
+  } catch (err) {
+    if (isSelected()) {
+      status.textContent = `Không tạo được deck tự động. Hãy cập nhật/deploy Google Apps Script mới nhất rồi tải lại bài học. Chi tiết: ${err.message}`;
+      button.textContent = "Thử tạo lại deck";
+    }
+  } finally {
+    if (isSelected() && !source.deckId) button.disabled = false;
+  }
+}
+
+async function studySourceVocabulary() {
+  const source = learningSources.find(item => item.id === selectedLearningSourceId);
+  if (!source) return;
+  if (!source.deckId) return ensureSourceVocabularyDeck(source);
+  const deck = personalDecks.find(item => item.id === source.deckId);
+  if (!deck) {
+    await fetchPersonalDecks();
+  }
+  if (!personalDecks.some(item => item.id === source.deckId)) {
+    showToast("⚠️ Không tải được deck từ vựng. Hãy tải lại bài học hoặc kiểm tra Google Apps Script.");
+    return;
+  }
+  activeDeckId = source.deckId;
+  saveActiveDeckId(activeDeckId);
+  const flashTabIndex = [...document.querySelectorAll(".tab-btn")].findIndex(button => button.dataset.tab === "flashcard");
+  switchTab("flashcard", flashTabIndex);
 }
 
 function renderExtractedWord(source, word) {
@@ -1117,77 +1205,6 @@ function renderExtractedWord(source, word) {
   };
   status.textContent = labels[word.status] || word.status;
   controls.appendChild(status);
-
-  if (word.status === "pending") {
-    const select = document.createElement("select");
-    select.className = "input-field source-deck-select";
-    if (!personalDecks.length) {
-      const placeholder = document.createElement("option");
-      placeholder.value = "";
-      placeholder.textContent = "Chọn hoặc tạo deck mới";
-      select.appendChild(placeholder);
-    }
-    personalDecks.forEach(deck => {
-      const option = document.createElement("option");
-      option.value = deck.id;
-      option.textContent = deck.name;
-      select.appendChild(option);
-    });
-    const createOption = document.createElement("option");
-    createOption.value = "__create_new_deck__";
-    createOption.textContent = "+ Tạo deck mới và thêm từ này";
-    select.appendChild(createOption);
-    const addButton = document.createElement("button");
-    addButton.className = "btn btn-primary btn-sm";
-    addButton.textContent = "Thêm vào deck";
-    const addToSelectedDeck = async deckId => {
-      if (!deckId || deckId === "__create_new_deck__") return;
-      addButton.disabled = true;
-      try {
-        const card = await addCardToDeck(deckId, {
-          kr: word.kr, romaja: word.romaja || "", vi: word.vi, examples: word.examples || []
-        }, { sourceId: source.id, extractionId: word.id });
-        if (!card) throw new Error("Không thêm được thẻ.");
-        word.status = card.alreadyExists ? "already_in_deck" : "added";
-        word.deckId = deckId;
-        renderLearningSources();
-        showToast(card.alreadyExists ? "Từ đã có trong deck, đã liên kết history." : "✓ Đã thêm từ vào deck");
-      } catch (err) {
-        showToast("⚠️ " + err.message);
-        addButton.disabled = false;
-      }
-    };
-    addButton.addEventListener("click", () => addToSelectedDeck(select.value));
-    select.addEventListener("change", async () => {
-      if (select.value !== "__create_new_deck__") return;
-      const previousDeckId = personalDecks[0] && personalDecks[0].id;
-      const deckName = window.prompt("Nhập tên deck mới:");
-      if (!deckName || !deckName.trim()) {
-        select.value = previousDeckId || "";
-        return;
-      }
-
-      select.disabled = true;
-      try {
-        const deck = await createPersonalDeck(deckName.trim());
-        if (!deck) throw new Error("Không tạo được deck mới.");
-        const option = document.createElement("option");
-        option.value = deck.id;
-        option.textContent = deck.name;
-        select.insertBefore(option, createOption);
-        select.value = deck.id;
-        renderDeckSelector();
-        renderDeckGrid();
-        await addToSelectedDeck(deck.id);
-      } catch (err) {
-        showToast("⚠️ " + err.message);
-        select.value = previousDeckId || "";
-      } finally {
-        select.disabled = false;
-      }
-    });
-    controls.append(select, addButton);
-  }
 
   if (word.status === "pending") {
     const skipButton = document.createElement("button");
@@ -1234,26 +1251,52 @@ function renderExtractedWord(source, word) {
 function initSourceTab() {
   document.getElementById("btnAnalyzeSource").addEventListener("click", handleAnalyzeSource);
   document.getElementById("btnRefreshSources").addEventListener("click", loadLearningSources);
+  document.getElementById("btnNewSource").addEventListener("click", showNewLearningSourceForm);
+  document.getElementById("btnCreateFirstLesson").addEventListener("click", showNewLearningSourceForm);
+  document.getElementById("btnCancelNewSource").addEventListener("click", () => {
+    document.getElementById("sourceImportBlock").style.display = "none";
+  });
+  document.getElementById("btnStudySourceDeck").addEventListener("click", studySourceVocabulary);
+  document.getElementById("btnDeleteSource").addEventListener("click", deleteSelectedLearningSource);
   document.getElementById("btnGeneratePractice").addEventListener("click", generatePracticeConversation);
   document.getElementById("btnRevealAllPractice").addEventListener("click", toggleRevealAllPractice);
   document.getElementById("practiceDirection").addEventListener("change", renderPracticeDialogue);
 }
 
-/**
- * Mở khối luyện dịch hội thoại cho 1 nguồn. Nếu nguồn đã có hội thoại lưu trên Google Sheet thì
- * hiện ngay, không gọi AI; chỉ nguồn chưa có hội thoại mới tự gọi AI tạo lần đầu.
- */
-function startPracticeFromSource(source) {
-  currentPracticeSource = source;
-  document.getElementById("sourcePracticeBlock").style.display = "block";
-  document.getElementById("practiceSourceTitle").textContent = source.title;
-  document.getElementById("sourcePracticeBlock").scrollIntoView({ behavior: "smooth", block: "start" });
-  practiceLines = Array.isArray(source.dialogue) ? source.dialogue : [];
-  renderPracticeDialogue();
-  if (practiceLines.length) {
-    document.getElementById("practiceStatus").textContent = "Hội thoại đã lưu. Bấm \"Tạo hội thoại mới\" nếu muốn đổi bài.";
-  } else {
-    generatePracticeConversation();
+function showNewLearningSourceForm() {
+  if (!firebaseAuth.currentUser) {
+    showToast("⚠️ Đăng nhập Google trước khi tạo bài học");
+    return;
+  }
+  const form = document.getElementById("sourceImportBlock");
+  form.style.display = "block";
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("sourceTitleInput").focus();
+}
+
+async function deleteSelectedLearningSource() {
+  const source = learningSources.find(item => item.id === selectedLearningSourceId);
+  if (!source || !confirm("Xóa bài học này cùng nội dung, từ vựng và deck riêng của bài?")) return;
+  const button = document.getElementById("btnDeleteSource");
+  button.disabled = true;
+  try {
+    const idToken = await firebaseAuth.currentUser.getIdToken();
+    const result = await callGAS({ mode: "deleteLearningSource", idToken, sourceId: source.id });
+    if (!result.success) throw new Error(result.error || "Không xóa được bài học.");
+    learningSources = learningSources.filter(item => item.id !== source.id);
+    if (source.deckId) personalDecks = personalDecks.filter(deck => deck.id !== source.deckId);
+    if (activeDeckId === source.deckId) {
+      activeDeckId = BASIC_DECK_ID;
+      saveActiveDeckId(activeDeckId);
+    }
+    refreshExcludedSourceWords();
+    renderDeckSelector();
+    renderLearningSources();
+    showToast("✓ Đã xóa bài học");
+  } catch (err) {
+    showToast("⚠️ " + err.message);
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -1298,7 +1341,7 @@ function normalizePracticeLines(lines) {
 
 async function generatePracticeConversation() {
   const source = currentPracticeSource;
-  if (!source) return showToast("Hãy chọn nguồn học trước");
+  if (!source) return showToast("Hãy chọn bài học trước");
   if (practiceGenerating) return showToast("⚠️ AI đang tạo hội thoại, hãy chờ xong đã");
   const apiKey = getAIKeyForCurrentProvider();
   if (!apiKey) return showToast("⚠️ " + getAIKeyErrorMessage());
@@ -1543,7 +1586,7 @@ function renderDeckGrid() {
 
   grid.innerHTML = "";
 
-  getAllDecks().forEach(deck => {
+  getAllDecks().filter(deck => !deck.sourceId || deck.isBasic).forEach(deck => {
     const tile = document.createElement("div");
     tile.className = "deck-tile";
     tile.innerHTML = `

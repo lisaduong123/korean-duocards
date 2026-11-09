@@ -415,6 +415,7 @@ function doPost(e) {
     }
     if (payload.mode === "saveLearningSource") return handleSaveLearningSource(payload);
     if (payload.mode === "listLearningSources") return handleListLearningSources(payload);
+    if (payload.mode === "ensureSourceDeck") return handleEnsureSourceDeck(payload);
     if (payload.mode === "updateExtraction") return handleUpdateExtraction(payload);
     if (payload.mode === "deleteLearningSource") return handleDeleteLearningSource(payload);
     if (payload.mode === "saveSourceDialogue") return handleSaveSourceDialogue(payload);
@@ -508,7 +509,7 @@ function handleProgressSync(payload) {
 const DECKS_HEADER = ["Email", "DeckID", "Tên Deck", "CardID", "Hàn", "Romaja", "Việt", "Ví Dụ (JSON)", "SourceID", "ExtractionID"];
 const SOURCES_SHEET = "Nguồn học";
 const EXTRACTED_VOCAB_SHEET = "Từ vựng trích xuất";
-const SOURCES_HEADER = ["SourceID", "Email", "Tiêu đề", "Nội dung", "Ngày tạo", "Hội thoại (JSON)"];
+const SOURCES_HEADER = ["SourceID", "Email", "Tiêu đề", "Nội dung", "Ngày tạo", "Hội thoại (JSON)", "DeckID"];
 const EXTRACTED_VOCAB_HEADER = ["ExtractionID", "SourceID", "Email", "Từ gốc", "Romaja", "Nghĩa", "Dạng trong nguồn", "Ngữ cảnh", "Ví dụ (JSON)", "Trạng thái", "DeckID", "CardID", "Ngày tạo"];
 
 function getOrCreateDecksSheet() {
@@ -576,7 +577,7 @@ function handleListDecks(payload) {
   const rows = readDeckRows(getOrCreateDecksSheet()).filter(r => r.email === user.email);
   const decksById = {};
   rows.forEach(r => {
-    if (!decksById[r.deckId]) decksById[r.deckId] = { id: r.deckId, name: r.deckName, cards: [] };
+    if (!decksById[r.deckId]) decksById[r.deckId] = { id: r.deckId, name: r.deckName, sourceId: r.sourceId, cards: [] };
     if (r.cardId) {
       decksById[r.deckId].cards.push({
         id: r.cardId, kr: r.kr, romaja: r.romaja, vi: r.vi, examples: r.examples,
@@ -721,7 +722,7 @@ function handleSaveLearningSource(payload) {
   const sourceId = Utilities.getUuid();
   const sourceSheet = getOrCreateLearningSheet(SOURCES_SHEET, SOURCES_HEADER);
   const vocabSheet = getOrCreateLearningSheet(EXTRACTED_VOCAB_SHEET, EXTRACTED_VOCAB_HEADER);
-  sourceSheet.appendRow([sourceId, user.email, title, content, new Date(), ""]);
+  sourceSheet.appendRow([sourceId, user.email, title, content, new Date(), "", ""]);
 
   const createdAt = new Date();
   const rows = words.map(word => [
@@ -732,7 +733,79 @@ function handleSaveLearningSource(payload) {
   if (rows.length) {
     vocabSheet.getRange(vocabSheet.getLastRow() + 1, 1, rows.length, EXTRACTED_VOCAB_HEADER.length).setValues(rows);
   }
-  return jsonResponse({ success: true, sourceId, savedCount: rows.length });
+  const deckId = ensureSourceDeckForUser(user, sourceId);
+  return jsonResponse({ success: true, sourceId, deckId, savedCount: rows.length });
+}
+
+/**
+ * Tạo deck riêng cho một bài học và đưa các từ đã tách vào deck. Gắn DeckID vào nguồn
+ * để hàm có thể chạy lặp an toàn khi mở lại các bài học cũ chưa được nâng cấp.
+ */
+function ensureSourceDeckForUser(user, sourceId) {
+  const sourceSheet = getOrCreateLearningSheet(SOURCES_SHEET, SOURCES_HEADER);
+  const sourceRows = readRowsWithHeader(sourceSheet, SOURCES_HEADER);
+  const sourceIndex = sourceRows.findIndex(row => row[0] === sourceId && row[1] === user.email);
+  if (sourceIndex < 0) throw new Error("Không tìm thấy bài học của tài khoản này.");
+
+  const sourceRow = sourceRows[sourceIndex];
+  if (sourceRow[6]) return sourceRow[6];
+
+  const deckId = Utilities.getUuid();
+  const deckName = "Bài học · " + (CLEAN(sourceRow[2]) || "Không có tiêu đề");
+  const deckSheet = getOrCreateDecksSheet();
+  const vocabularySheet = getOrCreateLearningSheet(EXTRACTED_VOCAB_SHEET, EXTRACTED_VOCAB_HEADER);
+  const vocabularyRows = readRowsWithHeader(vocabularySheet, EXTRACTED_VOCAB_HEADER);
+  const linkedWords = vocabularyRows
+    .map((row, index) => ({ row, rowIndex: index + 2 }))
+    .filter(item => item.row[1] === sourceId && item.row[2] === user.email);
+  const seenWords = new Set();
+  const cards = [];
+
+  linkedWords.forEach(item => {
+    const word = item.row;
+    const key = CLEAN(word[3]).toLowerCase();
+    if (!key || !word[5] || seenWords.has(key)) return;
+    seenWords.add(key);
+    cards.push({
+      rowIndex: item.rowIndex,
+      cardId: Utilities.getUuid(),
+      kr: word[3], romaja: word[4], vi: word[5], examples: word[8],
+      extractionId: word[0]
+    });
+  });
+
+  const deckRows = [[user.email, deckId, deckName, "", "", "", "", "", sourceId, ""]];
+  cards.forEach(card => deckRows.push([
+    user.email, deckId, deckName, card.cardId, card.kr, card.romaja, card.vi, card.examples, sourceId, card.extractionId
+  ]));
+  deckSheet.getRange(deckSheet.getLastRow() + 1, 1, deckRows.length, DECKS_HEADER.length).setValues(deckRows);
+
+  cards.forEach(card => {
+    const vocabRow = vocabularyRows[card.rowIndex - 2];
+    if (vocabRow[9] === "pending") vocabRow[9] = "added";
+    vocabRow[10] = deckId;
+    vocabRow[11] = card.cardId;
+    vocabularySheet.getRange(card.rowIndex, 10, 1, 3).setValues([[vocabRow[9], deckId, card.cardId]]);
+  });
+  sourceSheet.getRange(sourceIndex + 2, 7).setValue(deckId);
+  return deckId;
+}
+
+function handleEnsureSourceDeck(payload) {
+  const user = verifyFirebaseIdToken(payload.idToken);
+  if (!user) return jsonResponse({ success: false, error: "Xác thực Google không hợp lệ hoặc đã hết hạn." });
+  try {
+    const lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    try {
+      const deckId = ensureSourceDeckForUser(user, payload.sourceId);
+      return jsonResponse({ success: true, deckId });
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    return jsonResponse({ success: false, error: "Không tạo được deck từ vựng cho bài học: " + err.message });
+  }
 }
 
 function handleListLearningSources(payload) {
@@ -757,7 +830,8 @@ function handleListLearningSources(payload) {
   });
 
   const sources = sourceRows.map(row => ({
-    id: row[0], title: row[2], content: row[3], createdAt: row[4], dialogue: parseDialogueJson(row[5]), words: vocabBySource[row[0]] || []
+    id: row[0], title: row[2], content: row[3], createdAt: row[4], dialogue: parseDialogueJson(row[5]),
+    deckId: row[6] || "", words: vocabBySource[row[0]] || []
   })).reverse();
   return jsonResponse({ success: true, sources, excludedWords });
 }
@@ -820,11 +894,19 @@ function handleDeleteLearningSource(payload) {
   const sourceIndex = sourceRows.findIndex(row => row[0] === payload.sourceId && row[1] === user.email);
   if (sourceIndex < 0) return jsonResponse({ success: false, error: "Không tìm thấy nguồn học." });
 
+  const sourceDeckId = sourceRows[sourceIndex][6];
   const vocabRows = readRowsWithHeader(vocabSheet, EXTRACTED_VOCAB_HEADER);
   const deckSheet = getOrCreateDecksSheet();
-  readDeckRows(deckSheet)
-    .filter(row => row.email === user.email && row.sourceId === payload.sourceId)
+  const linkedDeckRows = readDeckRows(deckSheet)
+    .filter(row => row.email === user.email && row.sourceId === payload.sourceId);
+  linkedDeckRows
+    .filter(row => row.deckId !== sourceDeckId)
     .forEach(row => deckSheet.getRange(row.rowIndex, 9, 1, 2).clearContent());
+  linkedDeckRows
+    .filter(row => sourceDeckId && row.deckId === sourceDeckId)
+    .map(row => row.rowIndex)
+    .sort((a, b) => b - a)
+    .forEach(rowIndex => deckSheet.deleteRow(rowIndex));
   vocabRows.map((row, index) => ({ row, rowIndex: index + 2 }))
     .filter(item => item.row[1] === payload.sourceId && item.row[2] === user.email)
     .sort((a, b) => b.rowIndex - a.rowIndex)
