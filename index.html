@@ -247,8 +247,48 @@
                       <h3 class="lesson-section-title">🧠 Từ vựng bài học</h3>
                       <p class="hint-text" id="sourceDeckStatus"></p>
                     </div>
-                    <button class="btn btn-secondary btn-sm" id="btnStudySourceDeck">Học flashcard</button>
+                    <button class="btn btn-secondary btn-sm" id="btnStudySourceDeck">Mở ở tab Flashcard</button>
                   </div>
+
+                  <div class="lesson-flash" id="lessonFlash">
+                    <p class="hint-text" id="lessonFlashStatus" style="display:none;"></p>
+                    <div class="progress-row" id="lessonFlashProgress">
+                      <div class="progress-track">
+                        <div class="progress-fill" id="lessonFlashProgressFill"></div>
+                      </div>
+                      <span class="progress-label" id="lessonFlashProgressLabel">0 / 0</span>
+                    </div>
+                    <div class="flashcard-zone" id="lessonFlashZone">
+                      <div class="flashcard" id="lessonFlashcard">
+                        <div class="flashcard-face flashcard-front">
+                          <span class="badge-level" id="lessonCardLevelBadge">Mới</span>
+                          <p class="card-kr" id="lessonCardKr"></p>
+                          <p class="card-hint">Nhấn vào thẻ để lật</p>
+                        </div>
+                        <div class="flashcard-face flashcard-back">
+                          <p class="card-romaja" id="lessonCardRomaja"></p>
+                          <p class="card-vi" id="lessonCardVi"></p>
+                          <p class="card-example" id="lessonCardExample"></p>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flash-actions" id="lessonFlashActions">
+                      <button class="btn btn-forget" id="btnLessonForget">
+                        <span class="btn-icon">✕</span> Chưa nhớ
+                      </button>
+                      <button class="btn btn-remember" id="btnLessonRemember">
+                        <span class="btn-icon">✓</span> Đã nhớ
+                      </button>
+                    </div>
+                    <div class="empty-state lesson-flash-empty" id="lessonFlashEmpty" style="display:none;">
+                      <div class="empty-emoji">🎉</div>
+                      <h3 id="lessonFlashEmptyTitle">Đã ôn hết thẻ của bài này</h3>
+                      <p id="lessonFlashEmptyText">Quay lại sau để ôn tiếp theo lịch lặp lại ngắt quãng.</p>
+                      <button class="btn btn-primary" id="btnLessonReviewAll">Học lại tất cả từ của bài</button>
+                    </div>
+                  </div>
+
+                  <h4 class="lesson-word-list-title">Danh sách từ</h4>
                   <div id="sourceVocabularyList" class="source-extracted-words"></div>
                 </div>
 

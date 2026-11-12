@@ -1093,6 +1093,7 @@ function renderSelectedLearningSource(source) {
   empty.style.display = source ? "none" : "block";
   detail.style.display = source ? "flex" : "none";
   if (!source) {
+    lessonFlash = { deckId: "", queue: [], index: 0 };
     currentPracticeSource = null;
     practiceLines = [];
     renderPracticeDialogue();
@@ -1106,7 +1107,7 @@ function renderSelectedLearningSource(source) {
   document.getElementById("sourceDeckStatus").textContent = source.deckId
     ? `Deck riêng · ${source.words.length} từ vựng`
     : "Đang chuẩn bị deck riêng cho bài học...";
-  document.getElementById("btnStudySourceDeck").textContent = source.deckId ? "Học flashcard" : "Đang tạo deck...";
+  document.getElementById("btnStudySourceDeck").textContent = source.deckId ? "Mở ở tab Flashcard" : "Đang tạo deck...";
   document.getElementById("btnStudySourceDeck").disabled = !source.deckId;
 
   const wordList = document.getElementById("sourceVocabularyList");
@@ -1120,6 +1121,8 @@ function renderSelectedLearningSource(source) {
     wordList.appendChild(noWords);
   }
 
+  renderLessonFlashcard(source);
+
   document.getElementById("practiceSourceTitle").textContent = source.title;
   document.getElementById("btnGeneratePractice").textContent = source.dialogue.length ? "Tạo hội thoại mới" : "Tạo hội thoại";
   practiceLines = Array.isArray(source.dialogue) ? source.dialogue : [];
@@ -1127,6 +1130,124 @@ function renderSelectedLearningSource(source) {
     ? "Hội thoại đã lưu cùng bài học."
     : "Chưa tạo hội thoại. Có thể tạo riêng khi bạn sẵn sàng; nội dung bài học đã được lưu.";
   renderPracticeDialogue();
+}
+
+/* ---- Flashcard ngay trong trang bài học (dùng deck riêng của bài, chung tiến độ SRS với tab Flashcard) ---- */
+let lessonFlash = { deckId: "", queue: [], index: 0 };
+let lessonDecksReloading = false;
+
+function getLessonDeck(source) {
+  return source && source.deckId ? personalDecks.find(deck => deck.id === source.deckId) || null : null;
+}
+
+/** Dựng hàng đợi thẻ tới hạn khi đổi bài học; giữ nguyên vị trí nếu chỉ vẽ lại cùng bài. */
+function renderLessonFlashcard(source, forceRebuild = false) {
+  const status = document.getElementById("lessonFlashStatus");
+  const parts = ["lessonFlashProgress", "lessonFlashZone", "lessonFlashActions", "lessonFlashEmpty"]
+    .map(id => document.getElementById(id));
+  const setStatus = text => {
+    status.textContent = text;
+    status.style.display = text ? "block" : "none";
+  };
+
+  const deck = getLessonDeck(source);
+  if (!deck) {
+    lessonFlash = { deckId: "", queue: [], index: 0 };
+    parts.forEach(el => { el.style.display = "none"; });
+    if (!source || !source.deckId) {
+      setStatus("Flashcard sẽ hiện ở đây khi deck của bài học được tạo xong.");
+    } else if (!lessonDecksReloading) {
+      setStatus("Đang tải thẻ của bài học...");
+      lessonDecksReloading = true;
+      fetchPersonalDecks().finally(() => {
+        lessonDecksReloading = false;
+        const current = learningSources.find(item => item.id === selectedLearningSourceId);
+        if (!current || current.id !== source.id) return;
+        if (getLessonDeck(current)) renderLessonFlashcard(current, true);
+        else setStatus("Không tải được thẻ của bài học. Hãy tải lại danh sách bài học.");
+      });
+    }
+    return;
+  }
+  setStatus("");
+
+  if (forceRebuild || lessonFlash.deckId !== deck.id) {
+    lessonFlash = { deckId: deck.id, queue: deck.cards.filter(card => isDue(card.id)), index: 0 };
+  }
+  showLessonFlashcard(deck);
+}
+
+function showLessonFlashcard(deck) {
+  const total = deck.cards.length;
+  const { queue, index } = lessonFlash;
+  const progress = document.getElementById("lessonFlashProgress");
+  const zone = document.getElementById("lessonFlashZone");
+  const actions = document.getElementById("lessonFlashActions");
+  const empty = document.getElementById("lessonFlashEmpty");
+  document.getElementById("lessonFlashcard").classList.remove("flipped");
+
+  if (index >= queue.length) {
+    progress.style.display = total ? "" : "none";
+    zone.style.display = "none";
+    actions.style.display = "none";
+    empty.style.display = "block";
+    document.getElementById("lessonFlashProgressFill").style.width = "100%";
+    document.getElementById("lessonFlashProgressLabel").textContent = `${total} / ${total}`;
+    const reviewAll = document.getElementById("btnLessonReviewAll");
+    if (!total) {
+      document.getElementById("lessonFlashEmptyTitle").textContent = "Bài học này chưa có thẻ nào";
+      document.getElementById("lessonFlashEmptyText").textContent = "Deck của bài chưa có từ vựng để học.";
+      reviewAll.style.display = "none";
+    } else {
+      document.getElementById("lessonFlashEmptyTitle").textContent = "Đã ôn hết thẻ của bài này";
+      document.getElementById("lessonFlashEmptyText").textContent = "Quay lại sau để ôn tiếp theo lịch lặp lại ngắt quãng.";
+      reviewAll.style.display = "inline-flex";
+    }
+    return;
+  }
+
+  progress.style.display = "";
+  zone.style.display = "flex";
+  actions.style.display = "flex";
+  empty.style.display = "none";
+
+  const card = queue[index];
+  const state = getCardState(card.id);
+  document.getElementById("lessonCardKr").textContent = card.kr;
+  document.getElementById("lessonCardRomaja").textContent = card.romaja || "";
+  document.getElementById("lessonCardVi").textContent = card.vi;
+  const firstExample = getCardExamples(card)[0];
+  const exampleEl = document.getElementById("lessonCardExample");
+  exampleEl.textContent = firstExample ? `"${firstExample.example}"` : "";
+  exampleEl.style.display = firstExample ? "block" : "none";
+  document.getElementById("lessonCardLevelBadge").textContent = state.reviews === 0 ? "Mới" : `Cấp độ ${state.level}`;
+
+  const done = total - queue.length + index;
+  document.getElementById("lessonFlashProgressFill").style.width = `${total ? (done / total) * 100 : 0}%`;
+  document.getElementById("lessonFlashProgressLabel").textContent = `${done} / ${total}`;
+}
+
+function answerLessonFlashcard(remembered) {
+  const deck = personalDecks.find(item => item.id === lessonFlash.deckId);
+  const card = lessonFlash.queue[lessonFlash.index];
+  if (!deck || !card) return;
+  if (remembered) {
+    markRemembered(card.id);
+    showToast(`✓ Đã ghi nhớ "${card.kr}"`);
+  } else {
+    markForgotten(card.id);
+    showToast(`Sẽ ôn lại "${card.kr}" sớm hơn`);
+  }
+  lessonFlash.index += 1;
+  showLessonFlashcard(deck);
+  updateStatsPill();
+}
+
+function reviewAllLessonCards() {
+  const deck = personalDecks.find(item => item.id === lessonFlash.deckId);
+  if (!deck) return;
+  lessonFlash = { deckId: deck.id, queue: shuffleArray([...deck.cards]), index: 0 };
+  showLessonFlashcard(deck);
 }
 
 async function ensureSourceVocabularyDeck(source) {
@@ -1257,6 +1378,12 @@ function initSourceTab() {
     document.getElementById("sourceImportBlock").style.display = "none";
   });
   document.getElementById("btnStudySourceDeck").addEventListener("click", studySourceVocabulary);
+  document.getElementById("lessonFlashcard").addEventListener("click", () => {
+    document.getElementById("lessonFlashcard").classList.toggle("flipped");
+  });
+  document.getElementById("btnLessonRemember").addEventListener("click", () => answerLessonFlashcard(true));
+  document.getElementById("btnLessonForget").addEventListener("click", () => answerLessonFlashcard(false));
+  document.getElementById("btnLessonReviewAll").addEventListener("click", reviewAllLessonCards);
   document.getElementById("btnDeleteSource").addEventListener("click", deleteSelectedLearningSource);
   document.getElementById("btnGeneratePractice").addEventListener("click", generatePracticeConversation);
   document.getElementById("btnRevealAllPractice").addEventListener("click", toggleRevealAllPractice);

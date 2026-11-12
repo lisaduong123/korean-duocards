@@ -1420,3 +1420,28 @@ body {
     justify-content: flex-start;
   }
 }
+
+/* ---------------------------------- LESSON FLASHCARD ---------------------------------- */
+.lesson-flash {
+  margin: 18px 0 8px;
+}
+
+.lesson-flash .flashcard-zone {
+  margin-bottom: 18px;
+}
+
+.lesson-flash .flashcard {
+  height: 260px;
+}
+
+.lesson-flash-empty {
+  box-shadow: none;
+  border: 1px dashed var(--color-border);
+  padding: 32px 24px;
+}
+
+.lesson-word-list-title {
+  margin: 22px 0 10px;
+  font-size: 14px;
+  color: var(--color-text-soft);
+}
