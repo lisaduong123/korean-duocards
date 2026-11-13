@@ -1445,3 +1445,64 @@ body {
   font-size: 14px;
   color: var(--color-text-soft);
 }
+
+/* ---------------------------------- LESSON: THÊM TỪ ---------------------------------- */
+.lesson-add-word {
+  margin: 18px 0 0;
+  border: 1.5px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+}
+
+.lesson-add-word summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.lesson-add-word-body {
+  margin-top: 14px;
+}
+
+.lesson-add-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.lesson-add-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.lesson-add-example {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-alt);
+}
+
+.lesson-add-example .input-field {
+  padding: 9px 12px;
+  font-size: 13.5px;
+  background: #fff;
+}
+
+.lesson-add-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+@media (max-width: 560px) {
+  .lesson-add-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}

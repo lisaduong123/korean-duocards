@@ -1104,22 +1104,19 @@ function renderSelectedLearningSource(source) {
   document.getElementById("sourceLessonDate").textContent = formatLessonDate(source.createdAt);
   document.getElementById("sourceLessonTitle").textContent = source.title;
   document.getElementById("sourceLessonContent").textContent = source.content;
+  const lessonDeck = getLessonDeck(source);
   document.getElementById("sourceDeckStatus").textContent = source.deckId
-    ? `Deck riêng · ${source.words.length} từ vựng`
+    ? `Deck riêng · ${lessonDeck ? lessonDeck.cards.length : source.words.length} từ vựng`
     : "Đang chuẩn bị deck riêng cho bài học...";
+  document.getElementById("lessonAddWord").style.display = source.deckId ? "" : "none";
+  if (lessonAddSourceId !== source.id) {
+    lessonAddSourceId = source.id;
+    resetLessonAddForm();
+  }
   document.getElementById("btnStudySourceDeck").textContent = source.deckId ? "Mở ở tab Flashcard" : "Đang tạo deck...";
   document.getElementById("btnStudySourceDeck").disabled = !source.deckId;
 
-  const wordList = document.getElementById("sourceVocabularyList");
-  wordList.replaceChildren();
-  if (source.words.length) {
-    source.words.forEach(word => wordList.appendChild(renderExtractedWord(source, word)));
-  } else {
-    const noWords = document.createElement("p");
-    noWords.className = "hint-text";
-    noWords.textContent = "Bài học này chưa có từ vựng được trích xuất.";
-    wordList.appendChild(noWords);
-  }
+  renderLessonWordList(source);
 
   renderLessonFlashcard(source);
 
@@ -1130,6 +1127,201 @@ function renderSelectedLearningSource(source) {
     ? "Hội thoại đã lưu cùng bài học."
     : "Chưa tạo hội thoại. Có thể tạo riêng khi bạn sẵn sàng; nội dung bài học đã được lưu.";
   renderPracticeDialogue();
+}
+
+function renderLessonWordList(source) {
+  const wordList = document.getElementById("sourceVocabularyList");
+  wordList.replaceChildren();
+  const deck = getLessonDeck(source);
+  const customCards = deck ? deck.cards.filter(card => !card.extractionId) : [];
+  source.words.forEach(word => wordList.appendChild(renderExtractedWord(source, word)));
+  customCards.forEach(card => wordList.appendChild(renderCustomLessonWord(card)));
+  if (!source.words.length && !customCards.length) {
+    const noWords = document.createElement("p");
+    noWords.className = "hint-text";
+    noWords.textContent = "Bài học này chưa có từ vựng.";
+    wordList.appendChild(noWords);
+  }
+}
+
+/** Thẻ do người dùng tự thêm vào deck bài học (không đến từ phần AI tách từ). */
+function renderCustomLessonWord(card) {
+  const item = document.createElement("div");
+  item.className = "source-word-item";
+  const copy = document.createElement("div");
+  copy.className = "source-word-copy";
+  const term = document.createElement("strong");
+  term.textContent = `${card.kr} · ${card.vi}`;
+  copy.appendChild(term);
+  if (card.romaja) {
+    const romaja = document.createElement("p");
+    romaja.textContent = card.romaja;
+    copy.appendChild(romaja);
+  }
+  const example = getCardExamples(card)[0];
+  if (example) {
+    const exampleLine = document.createElement("p");
+    exampleLine.className = "source-word-example";
+    exampleLine.textContent = example.exampleVi ? `${example.example} (${example.exampleVi})` : example.example;
+    copy.appendChild(exampleLine);
+  }
+  item.appendChild(copy);
+  const controls = document.createElement("div");
+  controls.className = "source-word-controls";
+  const status = document.createElement("span");
+  status.className = "source-word-status";
+  status.textContent = "Bạn tự thêm";
+  controls.appendChild(status);
+  item.appendChild(controls);
+  return item;
+}
+
+/* ---- Ô "Thêm từ" trong trang bài học: AI tự điền phiên âm, nghĩa, câu ví dụ rồi lưu vào deck của bài ---- */
+let lessonAddSourceId = "";
+let lessonAddExamples = [];
+let lessonAddTimer = null;
+let lessonAddFilledKr = "";
+let lessonAddBusy = false;
+let lessonAddRun = 0;
+
+function setLessonAddStatus(text, isError = false) {
+  const status = document.getElementById("lessonAddStatus");
+  status.textContent = text;
+  status.className = isError ? "hint-text status-error-text" : "hint-text";
+}
+
+function resetLessonAddForm() {
+  clearTimeout(lessonAddTimer);
+  lessonAddRun += 1;
+  lessonAddBusy = false;
+  document.getElementById("btnLessonAddExamples").disabled = false;
+  lessonAddFilledKr = "";
+  lessonAddExamples = [];
+  ["lessonAddKr", "lessonAddRomaja", "lessonAddVi"].forEach(id => { document.getElementById(id).value = ""; });
+  renderLessonAddExamples();
+  setLessonAddStatus(`Gõ từ tiếng Hàn rồi ngừng một chút, ${getAIProviderLabel()} sẽ tự điền phiên âm, nghĩa và câu ví dụ. Bạn sửa lại được trước khi lưu.`);
+}
+
+function renderLessonAddExamples() {
+  const container = document.getElementById("lessonAddExamples");
+  container.replaceChildren();
+  lessonAddExamples.forEach((example, index) => {
+    const row = document.createElement("div");
+    row.className = "lesson-add-example";
+    const kr = document.createElement("textarea");
+    kr.className = "input-field";
+    kr.rows = 1;
+    kr.placeholder = `Câu ví dụ ${index + 1}`;
+    kr.value = example.example;
+    kr.addEventListener("input", () => { example.example = kr.value; });
+    const vi = document.createElement("input");
+    vi.type = "text";
+    vi.className = "input-field";
+    vi.placeholder = "Dịch tiếng Việt";
+    vi.value = example.exampleVi;
+    vi.addEventListener("input", () => { example.exampleVi = vi.value; });
+    row.append(kr, vi);
+    container.appendChild(row);
+  });
+}
+
+async function autoFillLessonWord(force = false) {
+  const krInput = document.getElementById("lessonAddKr");
+  const kr = krInput.value.trim();
+  if (!kr || (!force && kr === lessonAddFilledKr)) return;
+  const apiKey = getAIKeyForCurrentProvider();
+  if (!apiKey) {
+    setLessonAddStatus("⚠️ " + getAIKeyErrorMessage() + " Bạn vẫn có thể tự nhập phiên âm và nghĩa rồi lưu.", true);
+    return;
+  }
+  lessonAddFilledKr = kr;
+  const runId = ++lessonAddRun;
+  const stillCurrent = () => runId === lessonAddRun && krInput.value.trim() === kr;
+  const exampleButton = document.getElementById("btnLessonAddExamples");
+  exampleButton.disabled = true;
+  lessonAddBusy = true;
+  const problems = [];
+  try {
+    if (!force) {
+      setLessonAddStatus("🤖 AI đang điền phiên âm và nghĩa...");
+      try {
+        const info = await aiFillWordInfo(apiKey, kr);
+        if (!stillCurrent()) return;
+        if (info.romaja) document.getElementById("lessonAddRomaja").value = info.romaja;
+        if (info.vi) document.getElementById("lessonAddVi").value = info.vi;
+      } catch (err) {
+        if (!stillCurrent()) return;
+        problems.push("điền phiên âm/nghĩa thất bại: " + err.message);
+      }
+    }
+
+    setLessonAddStatus("🤖 AI đang tạo câu ví dụ... (có thể mất vài chục giây)");
+    try {
+      const examples = await aiGenerateExampleSentences(apiKey, kr, MAX_EXAMPLES_PER_CARD, (attempt, delayMs, provider) => {
+        if (stillCurrent()) setLessonAddStatus(getAIRetryMessage(attempt, delayMs, provider));
+      });
+      if (!stillCurrent()) return;
+      lessonAddExamples = examples.map(item => ({ ...item }));
+      renderLessonAddExamples();
+      if (!examples.length) problems.push("AI không trả về câu ví dụ hợp lệ, bấm “Tạo lại câu ví dụ” để thử lại");
+    } catch (err) {
+      if (!stillCurrent()) return;
+      problems.push("tạo câu ví dụ thất bại: " + err.message);
+    }
+
+    if (problems.length) setLessonAddStatus("⚠️ " + problems.join("; ") + ".", true);
+    else setLessonAddStatus(`✓ AI đã điền xong, ${lessonAddExamples.length} câu ví dụ. Kiểm tra lại rồi bấm Lưu.`);
+  } finally {
+    if (runId === lessonAddRun) {
+      exampleButton.disabled = false;
+      lessonAddBusy = false;
+    }
+  }
+}
+
+async function saveLessonWord() {
+  const source = learningSources.find(item => item.id === selectedLearningSourceId);
+  const deck = getLessonDeck(source);
+  if (!source || !deck) {
+    showToast("⚠️ Deck của bài học chưa sẵn sàng");
+    return;
+  }
+  const kr = document.getElementById("lessonAddKr").value.trim();
+  const romaja = document.getElementById("lessonAddRomaja").value.trim();
+  const vi = document.getElementById("lessonAddVi").value.trim();
+  if (!kr || !vi) {
+    showToast("⚠️ Cần có từ tiếng Hàn và nghĩa tiếng Việt");
+    return;
+  }
+  if (deck.cards.some(card => (card.kr || "").trim().toLowerCase() === kr.toLowerCase())) {
+    showToast(`⚠️ "${kr}" đã có trong deck của bài này`);
+    return;
+  }
+  if (lessonAddBusy && !confirm("AI vẫn đang tạo câu ví dụ. Lưu luôn mà không đợi?")) return;
+
+  const examples = lessonAddExamples
+    .map(item => ({ example: item.example.trim(), exampleVi: (item.exampleVi || "").trim(), blankWord: item.blankWord || kr }))
+    .filter(item => item.example);
+  const saveButton = document.getElementById("btnLessonAddSave");
+  saveButton.disabled = true;
+  saveButton.textContent = "Đang lưu...";
+  try {
+    const card = await addCardToDeck(deck.id, { kr, romaja, vi, examples }, { sourceId: source.id });
+    if (!card) return;
+    showToast(`✓ Đã thêm "${kr}" vào deck bài học`);
+    if (lessonFlash.deckId === deck.id) {
+      lessonFlash.queue.push(card);
+      showLessonFlashcard(deck);
+    }
+    document.getElementById("sourceDeckStatus").textContent = `Deck riêng · ${deck.cards.length} từ vựng`;
+    renderLessonWordList(source);
+    resetLessonAddForm();
+  } catch (err) {
+    showToast("⚠️ Không lưu được từ: " + err.message);
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = "Lưu vào deck bài học";
+  }
 }
 
 /* ---- Flashcard ngay trong trang bài học (dùng deck riêng của bài, chung tiến độ SRS với tab Flashcard) ---- */
@@ -1384,6 +1576,15 @@ function initSourceTab() {
   document.getElementById("btnLessonRemember").addEventListener("click", () => answerLessonFlashcard(true));
   document.getElementById("btnLessonForget").addEventListener("click", () => answerLessonFlashcard(false));
   document.getElementById("btnLessonReviewAll").addEventListener("click", reviewAllLessonCards);
+  document.getElementById("lessonAddKr").addEventListener("input", () => {
+    clearTimeout(lessonAddTimer);
+    lessonAddTimer = setTimeout(() => autoFillLessonWord(), 900);
+  });
+  document.getElementById("btnLessonAddExamples").addEventListener("click", () => {
+    if (!document.getElementById("lessonAddKr").value.trim()) return showToast("⚠️ Nhập từ tiếng Hàn trước");
+    autoFillLessonWord(true);
+  });
+  document.getElementById("btnLessonAddSave").addEventListener("click", saveLessonWord);
   document.getElementById("btnDeleteSource").addEventListener("click", deleteSelectedLearningSource);
   document.getElementById("btnGeneratePractice").addEventListener("click", generatePracticeConversation);
   document.getElementById("btnRevealAllPractice").addEventListener("click", toggleRevealAllPractice);

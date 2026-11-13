@@ -288,6 +288,30 @@
                     </div>
                   </div>
 
+                  <details class="lesson-add-word" id="lessonAddWord">
+                    <summary>➕ Thêm từ vào bài học</summary>
+                    <div class="lesson-add-word-body">
+                      <label class="field-label" for="lessonAddKr">Từ tiếng Hàn</label>
+                      <input type="text" class="input-field" id="lessonAddKr" placeholder="Ví dụ: 회의" autocomplete="off">
+                      <div class="lesson-add-row">
+                        <div>
+                          <label class="field-label mt" for="lessonAddRomaja">Phiên âm</label>
+                          <input type="text" class="input-field" id="lessonAddRomaja" placeholder="AI tự điền">
+                        </div>
+                        <div>
+                          <label class="field-label mt" for="lessonAddVi">Nghĩa tiếng Việt</label>
+                          <input type="text" class="input-field" id="lessonAddVi" placeholder="AI tự điền">
+                        </div>
+                      </div>
+                      <p class="hint-text" id="lessonAddStatus"></p>
+                      <div class="lesson-add-examples" id="lessonAddExamples"></div>
+                      <div class="lesson-add-actions">
+                        <button type="button" class="btn btn-tertiary btn-sm" id="btnLessonAddExamples">✨ Tạo lại câu ví dụ</button>
+                        <button type="button" class="btn btn-primary btn-sm" id="btnLessonAddSave">Lưu vào deck bài học</button>
+                      </div>
+                    </div>
+                  </details>
+
                   <h4 class="lesson-word-list-title">Danh sách từ</h4>
                   <div id="sourceVocabularyList" class="source-extracted-words"></div>
                 </div>
